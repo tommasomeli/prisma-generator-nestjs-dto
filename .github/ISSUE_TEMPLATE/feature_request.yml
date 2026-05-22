@@ -1,0 +1,39 @@
+name: Feature Request
+description: Suggest an improvement to the generator, plugin API, or annotations
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in improving the generator.
+        For API shape or plugin-system changes, describe the use case first — we can refine the design before you write code.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem? Please describe.
+      description: A clear and concise description of the problem. Ex. I'm always frustrated when [...]
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: What should the generator emit, or which config / annotation / plugin hook would solve it?
+    validations:
+      required: true
+  - type: textarea
+    id: schema
+    attributes:
+      label: Example schema or config (optional)
+      description: A `schema.prisma` snippet, `nestjs-dto.config.ts` fragment, or plugin sketch that illustrates the idea.
+      render: prisma
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Describe alternatives you've considered
+      description: Workarounds, other generators, or a custom plugin you tried.
+    validations:
+      required: false
