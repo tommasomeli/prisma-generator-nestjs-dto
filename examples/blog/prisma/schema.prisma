@@ -1,0 +1,44 @@
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+generator nestjsDto {
+    provider           = "node ../../dist/bin.cjs"
+    output             = "../generated"
+    outputType         = "class"
+    outputStructure    = "nestjs"
+    fileNamingStrategy = "kebab"
+    reExport           = "true"
+    classValidator     = "true"
+    swaggerDocs        = "true"
+    prettier           = "false"
+    configFile         = "../nestjs-dto.config.ts"
+}
+
+/// @Auditable("user_audit")
+model User {
+    id           Int      @id @default(autoincrement())
+    email        String   @unique
+    name         String
+    /// Field hidden from every emitted DTO.
+    /// @DtoHidden
+    passwordHash String
+    posts        Post[]
+    createdAt    DateTime @default(now())
+}
+
+/// @Auditable("post_audit")
+model Post {
+    id        Int      @id @default(autoincrement())
+    title     String
+    body      String
+    score     Decimal
+    author    User     @relation(fields: [authorId], references: [id])
+    authorId  Int
+    createdAt DateTime @default(now())
+}
