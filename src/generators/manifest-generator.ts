@@ -32,7 +32,12 @@ export default class ManifestGenerator extends BaseGenerator {
                 relations
             };
         }
-        const manifestContent = `import type { Prisma } from '@prisma/client';
+        const isZod = this.config.outputType === 'zod';
+        // Zod mode output must stay framework-free, so the model-name union is inlined instead of importing Prisma.
+        const modelNameHeader = isZod
+            ? `export type ModelName = ${this.models.map((m) => `'${m.name}'`).join(' | ') || 'never'};`
+            : `import type { Prisma } from '@prisma/client';`;
+        const manifestContent = `${modelNameHeader}
 
 export interface RelationDescriptor {
     type: string;
@@ -45,15 +50,16 @@ export interface ModelManifest {
     relations: Record<string, RelationDescriptor>;
 }
 
-export const PrismaManifest: Record<Prisma.ModelName, ModelManifest> = ${JSON.stringify(map, null, 4)};
+export const PrismaManifest: Record<${isZod ? 'ModelName' : 'Prisma.ModelName'}, ModelManifest> = ${JSON.stringify(map, null, 4)};
 `;
 
         const modelNames = this.models.map((m) => m.name);
         const isFlat = this.config.outputStructure === 'flat';
+        const entitySuffix = isZod ? '.schema' : '.entity';
         const importLines = modelNames
             .map((name) => {
                 const fileName = this.getModelName(name);
-                const importPath = isFlat ? `./${fileName}.entity` : `./${fileName}/${fileName}.entity`;
+                const importPath = isFlat ? `./${fileName}${entitySuffix}` : `./${fileName}/${fileName}${entitySuffix}`;
                 return `import type { ${name} as ${name}Entity } from '${importPath}';`;
             })
             .join('\n');

@@ -20,7 +20,7 @@ import {
     SWAGGER_API_PROPERTY_DECORATORS,
     SWAGGER_DECORATORS
 } from './constants';
-import { Annotation, Field, File, GeneratorConfig, GeneratorOptions, ImportType, Model, NamingStrategy, OutputStructure, OutputType, RawGeneratorConfig } from './types';
+import { Annotation, Field, File, GeneratorConfig, GeneratorOptions, ImportType, Model, NamingStrategy, OutputStructure, OutputType, RawGeneratorConfig, ZodMessageStrategy } from './types';
 import { Utility } from './utility';
 
 /**
@@ -55,7 +55,10 @@ export abstract class BaseGenerator {
             extraImports: Utility.parseImports(raw.extraImports),
             extraGenerators: raw.extraGenerators,
             extraScalars: Utility.parseExtraScalars(raw.extraScalars),
-            extraAnnotations: Utility.parseAnnotationNames(raw.extraAnnotations)
+            extraAnnotations: Utility.parseAnnotationNames(raw.extraAnnotations),
+            zodMeta: asString(raw.zodMeta) === undefined ? true : Utility.parseBoolean(asString(raw.zodMeta)),
+            zodMessageStrategy: (['key', 'expression', 'none'].includes(asString(raw.zodMessageStrategy) ?? '') ? asString(raw.zodMessageStrategy) : 'key') as ZodMessageStrategy,
+            zodCodecs: Utility.parseBoolean(asString(raw.zodCodecs))
         };
         this.models = this.options.dmmf.datamodel.models
             .map<Model>((model) => ({
@@ -88,7 +91,8 @@ export abstract class BaseGenerator {
                         relationOnDelete: field.relationOnDelete,
                         documentation: field.documentation,
                         isNullable: !field.isRequired || field.isList,
-                        annotations: this.extractAnnotations(field.documentation || '')
+                        annotations: this.extractAnnotations(field.documentation || ''),
+                        nativeType: field.nativeType ?? null
                     })),
                     ...this.getIgnoredFields(model.name)
                 ]
@@ -676,7 +680,8 @@ export abstract class BaseGenerator {
             if (extraModelsAnnotation?.params?.length) classDecorators.push(`@ApiExtraModels(${extraModelsAnnotation.params.join(', ')})`);
         }
         const decoratorsString = classDecorators.length ? `${classDecorators.join('\n')}\n` : '';
-        return `${this.getImportsTemplate({ model, classValidator, swaggerDocs, outputPath: args.outputPath })}\n\n${decoratorsString}export ${this.config.outputType} ${className.charAt(0).toUpperCase() + className.slice(1).replace(/_(\w)/g, (_, char) => char.toUpperCase())} {\n${fields}}`;
+        const keyword = this.config.outputType === 'class' ? 'class' : 'interface';
+        return `${this.getImportsTemplate({ model, classValidator, swaggerDocs, outputPath: args.outputPath })}\n\n${decoratorsString}export ${keyword} ${className.charAt(0).toUpperCase() + className.slice(1).replace(/_(\w)/g, (_, char) => char.toUpperCase())} {\n${fields}}`;
     }
 
     /** Returns the absolute (or relative-to-`relativeFrom`) output path for `model`. */

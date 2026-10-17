@@ -7,12 +7,13 @@
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/tommasomeli)
 
 A Prisma generator for NestJS DTOs with first-class **plugin** and **annotation** APIs.<br/>
-Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `@nestjs/swagger` decorators, then gets out of your way.
+Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `@nestjs/swagger` decorators, or framework-free **Zod 4 schemas** (`outputType = "zod"`), then gets out of your way.
 
 </div>
 
 ## Features
 
+- **Zod mode** (`outputType = "zod"`): plain Zod 4 schemas + inferred types for a shared contracts package, consumable by NestJS (`nestjs-zod`, OpenAPI included) and by frontends (react-hook-form) alike.
 - **Pluggable sub-generators** — drop in any `BaseGenerator` subclass next to the built-in DTOs (`extraGenerators`). TypeScript plugin files are loaded directly via `jiti`, no precompilation needed.
 - **Lifecycle hooks** — optional `beforeAll(models)` / `afterAll(files)` on every generator for shared pre/post-passes (model mutation, aggregated barrels, audit reports).
 - **Custom annotations** — register `@MyAnnotation(args)` names and read them inside your plugins (`extraAnnotations`).
@@ -27,6 +28,7 @@ Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `
 
 - [Install](#install)
 - [Quickstart](#quickstart)
+- [Zod mode](#zod-mode)
 - [Configuration](#configuration)
 - [Plugin system - custom generator](#plugin-system---custom-generator)
 - [Extra features](#extra-features)
@@ -44,7 +46,7 @@ Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `
 npm i -D @tommasomeli/prisma-generator-nestjs-dto
 ```
 
-Peers: `@prisma/generator-helper >= 5`, `prettier >= 3` (optional).
+Peers: `@prisma/generator-helper >= 5`, `prettier >= 3` (optional), `zod ^4.1` (optional, only needed by the package that consumes the Zod mode output).
 
 ## Quickstart
 
@@ -78,6 +80,289 @@ src/generated/nestjs-dto/
   index.ts
 ```
 
+## Zod mode
+
+`outputType = "zod"` replaces the built-in Create/Update/Entity class generators with Zod 4 equivalents. The output is **framework-free**: every file imports only `{ z } from 'zod'`, sibling generated files, and the modules you configure in `extraImports`. No `@nestjs/*`, `class-validator`, Swagger or Prisma imports. It is meant to live in a shared package (e.g. `packages/contracts`) used by:
+
+- the NestJS API, through `createZodDto(schema)` from [`nestjs-zod`](https://github.com/BenLorantfy/nestjs-zod) (validation + OpenAPI);
+- web / mobile clients (Next.js, Expo), through `zodResolver(schema)` and react-hook-form.
+
+### Setup
+
+```prisma
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+generator contracts {
+  provider           = "prisma-generator-nestjs-dto"
+  output             = "../../../packages/contracts/src/generated"
+  configFile         = "./contracts.config.ts"
+  outputType         = "zod"
+  outputStructure    = "nestjs"
+  fileNamingStrategy = "kebab"
+  reExport           = "true"
+  prettier           = "true"
+  schemaDir          = "src/prisma/schema"
+  zodMeta            = "true"
+  zodMessageStrategy = "key"
+  zodCodecs          = "false"
+}
+```
+
+```ts
+// contracts.config.ts (next to the schema)
+import { from, fromNamespace, type GeneratorConfigFile } from '@tommasomeli/prisma-generator-nestjs-dto';
+
+export default {
+    // Server-only validators: never imported in Zod mode, listed in server-rules.ts instead.
+    extraValidators: from('src/common/validators', ['IsUnique', 'IsImage']),
+    extraImports: [
+        // Paths must be resolvable from the generated package. Relative paths are resolved
+        // against this config file and rewritten relative to every emitted file.
+        fromNamespace('../../../packages/contracts/src/constants', 'CONSTANTS'),
+        from('../../../packages/contracts/src/media', 'MediaFormatsSchema')
+    ]
+} satisfies GeneratorConfigFile;
+```
+
+`classValidator` / `swaggerDocs` / `extraDecorators` are ignored in Zod mode. `extraGenerators` plugins still run, and `emitManifest` still emits `manifest.ts` / `model-entity-map.ts` (without the `@prisma/client` import; `ModelName` is inlined and entity types come from `*.schema.ts`).
+
+### Output
+
+```
+generated/
+  enums/
+    user-role.enum.ts      UserRoleSchema, UserRole (value + type)
+    index.ts
+  user/
+    user.schema.ts         UserSchema, type User
+    create-user.schema.ts  CreateUserSchema, types CreateUser / CreateUserOutput
+    update-user.schema.ts  UpdateUserSchema, types UpdateUser / UpdateUserOutput
+    index.ts
+  scalars.ts               DateTimeSchema, BigIntSchema, BytesSchema (+ *EntitySchema variants)
+  server-rules.ts          serverRules: validators Zod cannot express
+  index.ts
+```
+
+With `outputStructure = "flat"` everything lands in `output` (`user.schema.ts`, `user-role.enum.ts`, ...). `fileNamingStrategy` and `reExport` behave as in class mode.
+
+Generated from the `User` model of the test fixture (`test/fixtures/real-world/schema/user.prisma`), shortened:
+
+```prisma
+model User {
+  id        Int       @id @default(autoincrement())
+  createdAt DateTime? @default(now()) /// @createdAt
+  email     String?   @unique @db.VarChar(255)
+  role      UserRole? @default(guest)
+  /// @Length(6, 20, { message: i18nValidationMessage('validation.fields.password') })
+  /// @Matches(CONSTANTS.PASS_REGEX, { message: i18nValidationMessage('validation.fields.password') })
+  password  String?   @db.VarChar(255)
+  /// @DtoHidden
+  avatarId  Int?      @unique
+  avatar    Media?    @relation(fields: [avatarId], references: [id])
+  /// @DtoHidden
+  mfaSecret String?
+  mfaEnabled Boolean  @default(false)
+}
+```
+
+```ts
+// user/user.schema.ts
+export const UserSchema = z.object({
+    id: z.int(),
+    createdAt: DateTimeEntitySchema.nullish(),
+    email: z.string().nullish(),
+    role: UserRoleSchema.nullish(),
+    password: z.string().nullish(),
+    get avatar(): z.ZodOptional<z.ZodNullable<typeof MediaSchema>> {
+        return MediaSchema.nullish();
+    },
+    mfaEnabled: z.boolean()
+}).meta({ id: 'User' });
+
+export type User = z.infer<typeof UserSchema>;
+
+// user/create-user.schema.ts
+export const CreateUserSchema = z.object({
+    email: z.string().max(255).nullish(),
+    role: UserRoleSchema.nullable().default('guest'),
+    password: z.string().min(6, { error: 'validation.fields.password' }).max(20, { error: 'validation.fields.password' }).regex(CONSTANTS.PASS_REGEX, { error: 'validation.fields.password' }).nullish(),
+    avatar: z.union([z.int(), z.looseObject({ id: z.int().optional() })]).nullish(),
+    mfaEnabled: z.boolean().default(false)
+}).meta({ id: 'CreateUser' });
+
+export type CreateUser = z.input<typeof CreateUserSchema>;
+export type CreateUserOutput = z.output<typeof CreateUserSchema>;
+
+// user/update-user.schema.ts
+export const UpdateUserSchema = z.object({
+    id: z.int(),
+    email: z.string().max(255).nullish(),
+    role: UserRoleSchema.nullish(),
+    password: z.string().min(6, { error: 'validation.fields.password' }).max(20, { error: 'validation.fields.password' }).regex(CONSTANTS.PASS_REGEX, { error: 'validation.fields.password' }).nullish(),
+    avatar: z.union([z.int(), z.looseObject({ id: z.int().optional() })]).nullish(),
+    mfaEnabled: z.boolean().optional()
+}).meta({ id: 'UpdateUser' });
+```
+
+### Types: input vs output
+
+- `User = z.infer<typeof UserSchema>`: the read shape (what a client holds after parsing a response).
+- `CreateUser = z.input<typeof CreateUserSchema>`: what a client **sends** and what a form **holds**. Fields with a Prisma default stay optional here.
+- `CreateUserOutput = z.output<typeof CreateUserSchema>`: what the server receives **after** parsing (defaults applied). This is the instance type of `createZodDto(CreateUserSchema)`.
+
+With react-hook-form, pass both: `useForm<CreateUser, unknown, CreateUserOutput>`. `zodResolver` infers the same pair.
+
+### NestJS (`nestjs-zod`)
+
+```ts
+import { createZodDto, ZodResponse, ZodValidationPipe, ZodSerializerInterceptor, cleanupOpenApiDoc } from 'nestjs-zod';
+import { CreateUserSchema, UpdateUserSchema, UserSchema, serverRules } from '@acme/contracts';
+
+export class CreateUserDto extends createZodDto(CreateUserSchema) {}
+export class UpdateUserDto extends createZodDto(UpdateUserSchema) {}
+export class UserDto extends createZodDto(UserSchema) {}
+
+@Controller('users')
+export class UsersController {
+    @Post()
+    @ZodResponse({ type: UserDto })
+    create(@Body() body: CreateUserDto) {
+        return this.users.create(body); // Prisma rows (Date objects) are serialized by UserSchema
+    }
+}
+
+// app.module.ts
+providers: [
+    { provide: APP_PIPE, useClass: ZodValidationPipe },
+    { provide: APP_INTERCEPTOR, useClass: ZodSerializerInterceptor }
+];
+
+// main.ts
+SwaggerModule.setup('docs', app, cleanupOpenApiDoc(SwaggerModule.createDocument(app, config)));
+```
+
+`.meta({ id })` gives every schema (and enum) a stable OpenAPI component name (`User`, `CreateUser`, `UserRole`, `Media`, ...). Turn it off with `zodMeta = "false"`; recursive relations then fall back to anonymous `$defs` names, so keep it on when you publish OpenAPI.
+
+### Frontend (react-hook-form)
+
+```tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { CreateUserSchema, type CreateUser, type CreateUserOutput } from '@acme/contracts';
+
+export function SignUpForm() {
+    const form = useForm<CreateUser, unknown, CreateUserOutput>({ resolver: zodResolver(CreateUserSchema) });
+    const onSubmit = form.handleSubmit((values) => api.post('/users', values));
+    return (
+        <form onSubmit={onSubmit}>
+            <input {...form.register('email')} />
+            <input type="password" {...form.register('password')} />
+            {/* errors carry the i18n key, e.g. t(form.formState.errors.password?.message ?? '') */}
+            <button type="submit">Sign up</button>
+        </form>
+    );
+}
+```
+
+### Field mapping
+
+Which fields appear in each schema, and whether they are optional / nullable, mirrors class mode (the same selection code is shared):
+
+| Schema | Fields | Optional | Nullable |
+| ------ | ------ | -------- | -------- |
+| `<Model>Schema` | all but `@DtoHidden` / `@DtoEntityHidden` / `@DtoApiHidden` | not required, or list | optional column, or list |
+| `Create<Model>Schema` | drops ids, `@updatedAt`, `@createdAt`, relation foreign keys, `@DtoHidden`, `@DtoCreateHidden` | not required, list, has a Prisma default, `@DtoCreateOptional`, `@IsOptional` | as above, plus `@DtoCreateOptional` / `@IsOptional` |
+| `Update<Model>Schema` | like Create but keeps the id (required) and drops `@DtoUpdateHidden` | everything except the id (and `@DtoUpdateRequired`) | as above, plus `@DtoUpdateOptional` / `@IsOptional` |
+
+- **Defaults**: literal Prisma defaults (`@default(false)`, enum values, numbers, strings, `[]`, JSON) become `.default(...)` in the Create schema only. Function defaults (`now()`, `uuid()`, `autoincrement()`, ...) just make the field optional. The Update schema never applies defaults, so a partial update cannot silently reset a column (class mode assigns property initializers there).
+- **Non-empty strings**: required, non-nullable `String` fields get `.min(1)` in Create/Update, mirroring the `@IsNotEmpty()` that class mode adds.
+- **`@db.VarChar(n)` / `@db.Char(n)`**: `.max(n)` in Create/Update, unless an annotation already sets a max length.
+- **`@DtoReadOnly`**: `.readonly()` (OpenAPI `readOnly: true`), in every schema, like the `readonly` modifier of class mode.
+- **`@ignore`d fields** read through `schemaDir` are included exactly as in class mode.
+- **Relations**: entity schemas reference the related entity schema through a getter (`get avatar() { return MediaSchema.nullish(); }`) with an explicit return type, so recursive and cross-file cycles work with both TypeScript inference and `z.toJSONSchema`. Create/Update schemas accept the related primary key or an object with an optional primary key (`5`, `{ id: 5 }`, extra keys pass through for nested writes). Class mode types these as the related entity but never validates them; this keeps the payloads that worked before while staying non-recursive.
+- **Enums**: `z.enum([...])` in `enums/`, plus `UserRole` as both value (`UserRole.admin`) and type.
+
+| Prisma scalar | Create / Update | Entity | Notes |
+| ------------- | --------------- | ------ | ----- |
+| `String` | `z.string()` | `z.string()` | |
+| `Int` | `z.int()` | `z.int()` | safe integer range |
+| `Float` | `z.number()` | `z.number()` | |
+| `Decimal` | `z.number()` | `DecimalEntitySchema` (Decimal.js -> number) | override with `extraScalars` |
+| `Boolean` | `z.boolean()` | `z.boolean()` | |
+| `DateTime` | `DateTimeSchema` (ISO 8601 string) | `DateTimeEntitySchema` (`Date` -> ISO string) | Prisma accepts ISO strings on writes |
+| `BigInt` | `BigIntSchema` (integer string) | `BigIntEntitySchema` (`bigint` -> string) | convert with `BigInt()` before writing |
+| `Bytes` | `BytesSchema` (base64) | `BytesEntitySchema` (`Uint8Array` -> base64) | |
+| `Json` | `z.json()` | `z.json()` | |
+
+**Why strings for dates by default?** JSON carries ISO strings, and `nestjs-zod` builds OpenAPI with `z.toJSONSchema`, which throws on `z.date()` / `z.coerce.date()` / `z.bigint()` ("Date cannot be represented in JSON Schema"). `z.coerce.*` also types its input as `unknown`, which breaks form typing. The default schemas describe the wire format, are representable in both `io: "input"` and `io: "output"`, and the entity variants still accept the `Date` / `bigint` / `Uint8Array` values Prisma returns, so `@ZodResponse` / `ZodSerializerInterceptor` work without codecs.
+
+**`zodCodecs = "true"`** switches `DateTime` / `BigInt` / `Bytes` to [Zod codecs](https://zod.dev/codecs): parsing decodes to `Date` / `bigint` / `Uint8Array`, `schema.encode()` produces the wire format. Use `createZodDto(schema, { codec: true })` on the API (responses are encoded and documented with the input JSON Schema) and `z.toJSONSchema(schema, { io: 'input' })` yourself: the output side of a codec is not representable in JSON Schema. In codec mode `Decimal` stays a plain number.
+
+`extraScalars` accepts a `zod` expression per scalar, e.g. `{ Decimal: { zod: 'z.string().regex(/^\\d+(\\.\\d+)?$/)' } }`; identifiers it references are imported via `extraImports`.
+
+### Annotations in Zod mode
+
+class-validator annotations are translated in Create/Update schemas (entity schemas carry types only, like class mode):
+
+| Annotation | Zod |
+| ---------- | --- |
+| `@IsEmail()` / `@IsUrl()` / `@IsUUID('4')` | `z.email()` / `z.url()` / `z.uuid({ version: 'v4' })` |
+| `@IsDateString()` / `@IsISO8601()` on a `String` | `z.iso.datetime({ offset: true })` |
+| `@Length(min, max)` / `@MinLength(n)` / `@MaxLength(n)` | `.min()` / `.max()` |
+| `@Matches(regex)` / `@Matches('pattern', 'flags')` | `.regex(regex)` / `.regex(new RegExp('pattern', 'flags'))` |
+| `@Min(n)` / `@Max(n)` / `@IsPositive()` / `@IsNegative()` / `@IsDivisibleBy(n)` | `.min()` / `.max()` / `.positive()` / `.negative()` / `.multipleOf()` |
+| `@IsInt()` on a `Float` | `z.int()` |
+| `@IsNotEmpty()` | `.min(1)` (strings, arrays) |
+| `@ArrayMinSize(n)` / `@ArrayMaxSize(n)` / `@ArrayNotEmpty()` / `@ArrayUnique()` | array `.min()` / `.max()` / `.min(1)` / `.refine(...)` |
+| `@IsIn([...])` / `@IsNotIn([...])` / `@Equals(v)` / `@NotEquals(v)` | `z.literal([...])` / `.refine(...)` / `z.literal(v)` / `.refine(...)` |
+| `@Contains(s)` / `@IsLowercase()` / `@IsUppercase()` / `@IsAlpha()` / `@IsAlphanumeric()` / `@IsNumberString()` | `.includes()` / `.lowercase()` / `.uppercase()` / `.regex(...)` |
+| `@IsOptional()` | `.nullish()` |
+| `@IsString()`, `@IsBoolean()`, `@IsNumber()`, `@IsArray()`, `@ValidateNested()`, `@Type()`, ... | nothing (the type already enforces it) |
+
+For list fields, value validators apply to each item (as with `{ each: true }`) and `Array*` validators to the array.
+
+**Messages.** `{ message: 'literal' }` becomes `{ error: 'literal' }`. Expression messages follow `zodMessageStrategy`:
+
+- `key` (default): the first string literal of the expression, so `i18nValidationMessage('validation.fields.password')` becomes `{ error: 'validation.fields.password' }`. Clients translate the key (`t(issue.message)`); the API can do the same in its exception filter.
+- `expression`: emitted verbatim; its identifiers must be importable from the contracts package via `extraImports`.
+- `none`: messages are dropped.
+
+**Server-only rules.** Validators that Zod cannot express (anything from `extraValidators` such as `@IsUnique` / `@IsImage`, other class-validator decorators without a mapping such as `@IsStrongPassword`, and `@DtoCreateValidateIf` / `@DtoUpdateValidateIf`) are not emitted. They are exported as data in `server-rules.ts`, and the generator prints one warning per run:
+
+```ts
+export const serverRules: readonly ServerRule[] = [
+    {
+        model: 'User',
+        field: 'email',
+        rule: 'IsUnique',
+        args: ["{ message: i18nValidationMessage('validation.fields.email_exists') }"],
+        message: 'validation.fields.email_exists',
+        schemas: ['create', 'update']
+    }
+];
+```
+
+**Zod-specific annotations.**
+
+| Annotation | Effect |
+| ---------- | ------ |
+| `/// @Zod(.min(2).trim())` | Appends a raw chain to the field schema in Create/Update (the array for list fields), after the translated validators and before optional/nullable/default. |
+| `/// @ZodOverride(z.string().email())` | Replaces the field value schema in every schema (no translated validators, no list wrapping); optional/nullable/default still follow the table above. References to generated entity schemas (`MediaSchema`) are imported automatically. |
+
+**`@DtoOverrideType(<Type>)`** resolves to a Zod schema: a generated model maps to its entity schema (`@DtoOverrideType(Media)` -> `MediaSchema`), TS primitives map to Zod primitives (`string`, `number`, `boolean`, `Date`, `bigint`, `unknown`), and any other name follows the convention `FooDto` -> `FooSchema`, `Foo` -> `FooSchema` (`FooSchema` stays as is). Declare that identifier in `extraImports` (the generator warns when it is missing). Example: `@DtoOverrideType(MediaFormatsDto)` on an `@ignore`d `Json` field renders `MediaFormatsSchema.readonly().nullish()`.
+
+**Imports.** In Zod mode an `extraImports` entry is imported in a file only when one of its identifiers appears in the rendered code (validator arguments, `@Zod` / `@ZodOverride`, override schemas, `extraScalars.zod`). `@description(...)` / `@example(...)` become `.meta({ description, examples })`.
+
+### Limitations
+
+- `@ValidateIf`-style conditional validation is not translated (listed in `server-rules.ts`).
+- Raw `@Zod(...)` / `@ZodOverride(...)` code is copied verbatim: it is not type-checked by the generator, and a `.transform()` in it makes the schema unrepresentable in JSON Schema.
+- `@ZodOverride` on a relation that takes part in a cycle produces a getter without a return type annotation; TypeScript may then ask for one (TS7023).
+- Fields hidden with `@DtoApiHidden` are still accepted by Create/Update schemas (class mode only hides them from Swagger).
+
 ## Configuration
 
 
@@ -85,7 +370,7 @@ src/generated/nestjs-dto/
 | -------------------- | --------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `output`             | string                      | `../src/generated/nestjs-dto` | Destination directory.                                                                                                                          |
 | `configFile`         | string                      | —                             | Path to an external `.ts` / `.cts` / `.mts` / `.js` / `.cjs` / `.mjs` / `.json` config file. See [External config file](#external-config-file). |
-| `outputType`         | `class` | `interface`       | `class`                       | TypeScript classes (with decorators) or plain interfaces.                                                                                       |
+| `outputType`         | `class` | `interface` | `zod` | `class`                 | TypeScript classes (with decorators), plain interfaces, or Zod schemas (see [Zod mode](#zod-mode)).                                             |
 | `outputStructure`    | `nestjs` | `flat`           | `nestjs`                      | `nestjs` puts each model in its own folder, `flat` keeps everything in `output`.                                                                |
 | `fileNamingStrategy` | `camel` | `snake` | `kebab` | `camel`                       | File name casing.                                                                                                                               |
 | `reExport`           | `"true"` | `"false"`        | `"true"`                      | Emit `index.ts` barrels.                                                                                                                        |
@@ -100,6 +385,9 @@ src/generated/nestjs-dto/
 | `extraValidators`    | string | string[]           | —                             | Same as `extraDecorators`, also drives `class-validator` override-by-name.                                                                      |
 | `extraImports`       | string | string[]           | —                             | Imports referenced **inside annotation parameters** (e.g. `@ApiProperty({ example: USER_EXAMPLE })`).                                           |
 | `extraScalars`       | object (configFile only)    | —                             | Per-scalar overrides for TS type, Swagger `type`/`format`, and the imported module. See [Extra features](#extra-features).                      |
+| `zodMeta`            | `"true"` | `"false"`        | `"true"`                      | Zod mode: add `.meta({ id })` to every schema (stable OpenAPI component names).                                                                 |
+| `zodMessageStrategy` | `key` | `expression` | `none` | `key`                    | Zod mode: how expression messages (`i18nValidationMessage('k')`) are rendered.                                                                  |
+| `zodCodecs`          | `"true"` | `"false"`        | `"false"`                     | Zod mode: decode `DateTime` / `BigInt` / `Bytes` to `Date` / `bigint` / `Uint8Array` with Zod codecs instead of JSON wire types.                |
 
 
 > `extra*` options accept simple strings in `schema.prisma`. Anything more elaborate (arrays, descriptors, mixed forms) belongs in a [`configFile`](#external-config-file) — Prisma's generator block does not support multi-line arrays or nested objects.
@@ -110,7 +398,7 @@ A plugin is a class extending `BaseGenerator`. The base class hands you the pars
 
 ### Basic example — transform a `Model` and reuse the built-in renderer
 
-The shortest plugin filters/transforms a `Model` and lets `getTemplate(...)` do the rest. This is the built-in **`EntityDtoGenerator`** verbatim:
+The shortest plugin filters/transforms a `Model` and lets `getTemplate(...)` do the rest. This is equivalent to the built-in **`EntityDtoGenerator`** (which uses the exported `selectEntityFields(model)` helper; `selectCreateFields` / `selectUpdateFields` expose the Create/Update rules too):
 
 ```ts
 import { isEntityHidden } from '../annotations';
@@ -267,7 +555,7 @@ export default {
 } satisfies GeneratorConfigFile;
 ```
 
-Plugins are loaded with `require()` from the cwd — point at a **compiled JS/CJS** file. A plugin re-exporting a built-in name (`CreateDtoGenerator`, `EntityGenerator`, `UpdateDtoGenerator`) **replaces** it in the registry.
+Plugins are loaded with `require()` from the cwd — point at a **compiled JS/CJS** file. A plugin re-exporting a built-in name (`CreateDtoGenerator`, `EntityGenerator`, `UpdateDtoGenerator`; in Zod mode `ZodSupportGenerator`, `CreateZodGenerator`, `EntityZodGenerator`, `UpdateZodGenerator`) **replaces** it in the registry.
 
 `npx prisma generate` emits one file per opted-in model:
 
@@ -486,6 +774,8 @@ Triple-slash comments (`///`) above a model or field. Multiple annotations per t
 | field  | `@DtoOverrideApiPropertyType(<Type>)`       | Override only the Swagger `type` parameter.                                           |
 | field  | `@DtoCreateValidateIf(<expr>)`              | Emit `class-validator`'s `@ValidateIf(<expr>)` in the Create DTO.                     |
 | field  | `@DtoUpdateValidateIf(<expr>)`              | Same, for the Update DTO.                                                             |
+| field  | `@Zod(<chain>)`                             | Zod mode: append a raw chain (`.min(2).trim()`) to the Create/Update field schema.    |
+| field  | `@ZodOverride(<schema>)`                    | Zod mode: replace the field value schema (`z.string().email()`) everywhere.           |
 
 
 ### Custom (read by your plugins)

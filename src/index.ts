@@ -2,6 +2,7 @@ export * from './annotations';
 export * from './base-generator';
 export * from './config-loader';
 export * from './constants';
+export * from './field-selection';
 export * from './generator';
 export * from './generators';
 export * from './types';

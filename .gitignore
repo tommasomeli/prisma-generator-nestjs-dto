@@ -5,3 +5,6 @@ dist
 *lock.json
 *lock.yaml
 *.lock
+*.tgz
+coverage
+test/.output

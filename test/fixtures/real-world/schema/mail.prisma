@@ -1,0 +1,16 @@
+model Mail {
+  id        Int       @id @default(autoincrement()) @db.Integer
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  from      String?   @db.VarChar(255)
+  to        String[]  @db.Text
+  cc        String[]  @db.Text
+  bcc       String[]  @db.Text
+  subject   String    @db.Text
+  body      String    @db.Text
+  sentAt    DateTime? @map("sent_at") @db.Timestamptz()
+
+  @@index([deletedAt])
+  @@map("mail")
+}

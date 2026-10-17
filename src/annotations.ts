@@ -27,6 +27,12 @@ export const DTO_OVERRIDE_API_PROPERTY_TYPE = 'DtoOverrideApiPropertyType';
 export const DTO_CREATE_VALIDATE_IF = 'DtoCreateValidateIf';
 export const DTO_UPDATE_VALIDATE_IF = 'DtoUpdateValidateIf';
 
+// Zod mode annotations
+/** `@Zod(.min(2).trim())`: raw chain appended to the field schema of Create/Update schemas. */
+export const ZOD_CHAIN = 'Zod';
+/** `@ZodOverride(z.string().email())`: replaces the field value schema in every Zod schema. */
+export const ZOD_OVERRIDE = 'ZodOverride';
+
 /** Annotations that hide a field from the Entity DTO surface (and therefore from API responses). */
 export const ENTITY_HIDDEN_ANNOTATIONS = [DTO_HIDDEN, DTO_ENTITY_HIDDEN, DTO_API_HIDDEN];
 const ENTITY_HIDDEN_SET = new Set(ENTITY_HIDDEN_ANNOTATIONS);

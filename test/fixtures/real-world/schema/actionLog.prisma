@@ -1,0 +1,14 @@
+model ActionLog {
+  id        Int       @id @default(autoincrement()) @db.Integer
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  url       String?   @db.VarChar(255)
+  method    String?   @db.VarChar(255)
+  body      Json?
+  userId    Int?      @map("user_id")
+  ip        String?   @db.VarChar(255)
+
+  @@index([deletedAt])
+  @@map("action_log")
+}

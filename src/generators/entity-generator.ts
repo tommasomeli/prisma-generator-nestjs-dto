@@ -1,6 +1,6 @@
-import { isEntityHidden } from '../annotations';
 import { BaseGenerator } from '../base-generator';
-import { Field, File, Model } from '../types';
+import { selectEntityFields } from '../field-selection';
+import { File, Model } from '../types';
 
 export default class EntityDtoGenerator extends BaseGenerator {
     filePrefix = '';
@@ -10,8 +10,7 @@ export default class EntityDtoGenerator extends BaseGenerator {
 
     async generate(): Promise<File[]> {
         return this.models.map((model) => {
-            const filteredFields = model.fields.filter((field: Field) => !isEntityHidden(field));
-            const processedModel: Model = { ...model, fields: filteredFields as Field[] };
+            const processedModel: Model = { ...model, fields: selectEntityFields(model) };
             const outputPath = this.getPath(model);
             return {
                 path: outputPath,

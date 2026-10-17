@@ -2,7 +2,16 @@ import type { GeneratorOptions as PrismaGeneratorOptions } from '@prisma/generat
 
 export type NamingStrategy = 'camel' | 'snake' | 'kebab';
 
-export type OutputType = 'class' | 'interface';
+export type OutputType = 'class' | 'interface' | 'zod';
+
+/**
+ * How Zod mode renders `{ message }` options whose value is an expression
+ * (e.g. `i18nValidationMessage('validation.fields.password')`):
+ * - `key`: emit the first string literal found in the expression as the error message.
+ * - `expression`: emit the expression verbatim (its identifiers must be importable via `extraImports`).
+ * - `none`: drop every custom message.
+ */
+export type ZodMessageStrategy = 'key' | 'expression' | 'none';
 
 export type OutputStructure = 'nestjs' | 'flat';
 
@@ -42,6 +51,8 @@ export type Field = {
     documentation?: string | null;
     annotations: Annotation[];
     isNullable?: boolean;
+    /** Native database type, e.g. `['VarChar', ['255']]` for `@db.VarChar(255)`. */
+    nativeType?: readonly [string, readonly string[]] | null;
 };
 
 /** Pipeline-internal model representation. See `Field` for rationale. */
@@ -81,6 +92,11 @@ export type ScalarOverride = {
     apiType?: string;
     /** Value passed to `@ApiProperty({ format })`. Omit to inherit / drop the default. */
     format?: string;
+    /**
+     * Zod expression used for the scalar in `outputType = "zod"` (e.g. `'z.string()'`).
+     * Identifiers it references are imported through `extraImports`.
+     */
+    zod?: string;
 };
 
 /** Enriched config exposed to sub-generators after parsing the raw Prisma config. */
@@ -108,6 +124,15 @@ export type GeneratorConfig = {
      * an annotation here is documentation-and-discovery (e.g. for plugins to iterate over).
      */
     extraAnnotations: string[];
+    /** Zod mode: attach `.meta({ id })` to every generated schema. Defaults to `true`. */
+    zodMeta: boolean;
+    /** Zod mode: rendering strategy for expression messages. Defaults to `'key'`. */
+    zodMessageStrategy: ZodMessageStrategy;
+    /**
+     * Zod mode: render `DateTime` / `BigInt` / `Bytes` as Zod codecs that decode to
+     * `Date` / `bigint` / `Uint8Array` instead of plain JSON wire types. Defaults to `false`.
+     */
+    zodCodecs: boolean;
 };
 
 /**
@@ -192,4 +217,10 @@ export type GeneratorConfigFile = {
      * `BaseGenerator.hasAnnotation(field, name)`, or via the exposed `config.extraAnnotations`.
      */
     extraAnnotations?: string | string[];
+    /** Zod mode: attach `.meta({ id })` to generated schemas (stable OpenAPI component names). */
+    zodMeta?: boolean;
+    /** Zod mode: how expression messages such as `i18nValidationMessage('key')` are rendered. */
+    zodMessageStrategy?: ZodMessageStrategy;
+    /** Zod mode: emit codecs (`Date`, `bigint`, `Uint8Array`) instead of JSON wire types. */
+    zodCodecs?: boolean;
 };

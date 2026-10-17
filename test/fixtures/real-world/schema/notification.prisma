@@ -1,0 +1,26 @@
+model Notification {
+  id            Int                  @id @default(autoincrement()) @db.Integer
+  createdAt     DateTime?            @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt     DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt     DateTime?            @map("deleted_at") @db.Timestamptz()
+  title         String               @map("title") @db.VarChar(255)
+  message       String               @map("message") @db.Text
+  type          NotificationType     @default(info)
+  priority      NotificationPriority @default(normal)
+  recipientType RecipientType        @map("recipient_type")
+  recipientId   Int                  @map("recipient_id") @db.Integer
+  senderId      Int?                 @map("sender_id") @db.Integer
+  isRead        Boolean?             @default(false) @map("is_read")
+  readAt        DateTime?            @map("read_at") @db.Timestamptz()
+  deliveredAt   DateTime?            @map("delivered_at") @db.Timestamptz()
+  data          Json?                @map("data") @db.Json
+  expiresAt     DateTime?            @map("expires_at") @db.Timestamptz()
+
+  @@index([deletedAt])
+  @@index([recipientType, recipientId])
+  @@index([recipientType, recipientId, isRead])
+  @@index([recipientType, recipientId, type])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("notification")
+}

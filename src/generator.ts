@@ -3,7 +3,7 @@ import path from 'node:path';
 import prettier from 'prettier';
 import { BaseGenerator } from './base-generator';
 import { applyConfigFile, loadConfigFile } from './config-loader';
-import { CreateDtoGenerator, EntityGenerator, ManifestGenerator, UpdateDtoGenerator } from './generators';
+import { CreateDtoGenerator, CreateZodGenerator, EntityGenerator, EntityZodGenerator, ManifestGenerator, UpdateDtoGenerator, UpdateZodGenerator, ZodSupportGenerator } from './generators';
 import { GeneratorOptions, RawGeneratorConfig } from './types';
 import { Utility } from './utility';
 
@@ -13,6 +13,9 @@ import { Utility } from './utility';
  * `index.ts` barrels.
  */
 const BuiltInGenerators = { CreateDtoGenerator, EntityGenerator, UpdateDtoGenerator };
+
+/** Built-ins used when `outputType = "zod"` (replace the class/interface DTO generators). */
+const ZodBuiltInGenerators = { ZodSupportGenerator, CreateZodGenerator, EntityZodGenerator, UpdateZodGenerator };
 
 /** Constructor signature shared by every concrete generator extending `BaseGenerator`. */
 type GeneratorCtor = new (options: GeneratorOptions) => BaseGenerator;
@@ -155,7 +158,8 @@ export async function generate(options: GeneratorOptions): Promise<void> {
     const rawConfig = mergedConfig;
 
     const extraGenerators = await loadExtraGenerators(options);
-    const allGenerators = { ...BuiltInGenerators, ...extraGenerators };
+    const builtIns = rawConfig.outputType === 'zod' ? ZodBuiltInGenerators : BuiltInGenerators;
+    const allGenerators = { ...builtIns, ...extraGenerators };
     const generators = instantiateGenerators(allGenerators, options);
 
     // Make every generator instance share the same `models` reference so that
@@ -177,13 +181,17 @@ export async function generate(options: GeneratorOptions): Promise<void> {
     }
 
     const exports: Record<string, string> = {};
+    // Files written directly into `output` are exported from the main barrel, never through a per-folder one.
+    const rootFiles = new Set<string>();
     const emittedFiles: { path: string; content: string }[] = [];
     const persistFile = async (file: { path: string; content: string }, label: string): Promise<void> => {
         const content = await maybeFormat(file.content, prettierConfig, label);
         fs.mkdirSync(path.dirname(file.path), { recursive: true });
         fs.writeFileSync(file.path, content);
-        const exportPath = outputStructure === 'flat' ? file.path : path.dirname(file.path);
-        const exportLine = `export * from './${path.basename(file.path).replace('.ts', '')}';`;
+        const isRootFile = path.resolve(path.dirname(file.path)) === path.resolve(outputDir);
+        if (isRootFile) rootFiles.add(file.path);
+        const exportPath = outputStructure === 'flat' || isRootFile ? file.path : path.dirname(file.path);
+        const exportLine = `export * from './${path.basename(file.path).replace(/\.ts$/, '')}';`;
         exports[exportPath] = exports[exportPath] ? `${exports[exportPath]}\n${exportLine}` : exportLine;
         emittedFiles.push(file);
     };
@@ -210,13 +218,14 @@ export async function generate(options: GeneratorOptions): Promise<void> {
     if (Utility.parseBoolean(typeof rawConfig.reExport === 'string' ? rawConfig.reExport : undefined)) {
         if (outputStructure !== 'flat') {
             for (const [exportPath, content] of Object.entries(exports)) {
+                if (rootFiles.has(exportPath)) continue;
                 const indexContent = await maybeFormat(content, prettierConfig, 'index file');
                 fs.writeFileSync(`${exportPath}/index.ts`, indexContent);
             }
         }
         const mainIndexContent = await maybeFormat(
             Object.keys(exports)
-                .map((exportPath) => `export * from './${path.basename(exportPath).replace('.ts', '')}';`)
+                .map((exportPath) => `export * from './${path.basename(exportPath).replace(/\.ts$/, '')}';`)
                 .join('\n'),
             prettierConfig,
             'main index file'

@@ -1,0 +1,4 @@
+enum MfaMethod {
+  totp
+  email
+}

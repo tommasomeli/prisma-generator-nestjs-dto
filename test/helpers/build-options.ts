@@ -21,6 +21,12 @@ type FieldInput = {
     default?: unknown;
     relationFromFields?: string[];
     documentation?: string;
+    nativeType?: [string, string[]];
+};
+
+type EnumInput = {
+    name: string;
+    values: string[];
 };
 
 /** Builds a `DMMF.Field`-shaped object from a minimal input description. */
@@ -38,7 +44,8 @@ function makeField(input: FieldInput): DMMF.Field {
         hasDefaultValue: Boolean(input.hasDefaultValue),
         default: input.default,
         relationFromFields: input.relationFromFields,
-        documentation: input.documentation
+        documentation: input.documentation,
+        nativeType: input.nativeType ?? null
     } as DMMF.Field;
 }
 
@@ -60,8 +67,9 @@ function makeModel(input: ModelInput): DMMF.Model {
  * in a test. Provider/output default to plausible values; `config` is merged with
  * sensible defaults so tests only have to declare what they exercise.
  */
-export function buildOptions(args: { models: ModelInput[]; config?: RawGeneratorConfig; output?: string }): GeneratorOptions {
+export function buildOptions(args: { models: ModelInput[]; enums?: EnumInput[]; config?: RawGeneratorConfig; output?: string }): GeneratorOptions {
     const models = args.models.map(makeModel);
+    const enums = (args.enums ?? []).map((e) => ({ name: e.name, values: e.values.map((name) => ({ name, dbName: null })), dbName: null }));
     return {
         generator: {
             name: 'nestjsDTO',
@@ -84,7 +92,7 @@ export function buildOptions(args: { models: ModelInput[]; config?: RawGenerator
         dmmf: {
             datamodel: {
                 models,
-                enums: [],
+                enums,
                 types: [],
                 indexes: []
             },

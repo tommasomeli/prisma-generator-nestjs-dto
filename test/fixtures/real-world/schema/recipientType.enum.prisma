@@ -1,0 +1,4 @@
+enum RecipientType {
+  user
+  student
+}

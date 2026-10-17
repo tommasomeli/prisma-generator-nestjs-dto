@@ -1,0 +1,31 @@
+model Media {
+  id        Int        @id @default(autoincrement()) @db.Integer
+  createdAt DateTime?  @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime?  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime?  @map("deleted_at") @db.Timestamptz()
+  name      String     @db.VarChar(255)
+  filename  String     @db.VarChar(255)
+  ext       String     @db.VarChar(255)
+  base64    String?    @db.Text
+  hidden    Boolean?   @default(false)
+  /// @DtoHidden
+  pathId    Int?       @map("path_id") @db.Integer
+  path      MediaPath? @relation(fields: [pathId], references: [id], onDelete: SetNull)
+  /// @DtoHidden
+  parentId  Int?       @map("parent_id") @db.Integer
+  parent    Media?     @relation("mediaToMedia", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Media[]    @relation("mediaToMedia")
+  /// @DtoHidden
+  user      User?
+  /// @DtoReadOnly
+  /// @DtoOverrideType(MediaFormatsDto)
+  /// @DtoOverrideApiPropertyType(MediaFormatsDto)
+  formats   Json?      @ignore
+  /// @DtoReadOnly
+  mimeType  String?    @ignore
+
+  @@index([deletedAt])
+  @@index([parentId])
+  @@index([pathId])
+  @@map("media")
+}

@@ -1,0 +1,14 @@
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+minimumReleaseAgeExclude:
+  - '@prisma/config@7.10.1'
+  - '@prisma/debug@7.10.1'
+  - '@prisma/dmmf@7.10.1'
+  - '@prisma/engines@7.10.1'
+  - '@prisma/fetch-engine@7.10.1'
+  - '@prisma/generator-helper@7.10.1'
+  - '@prisma/generator@7.10.1'
+  - '@prisma/get-platform@7.10.1'
+  - prisma@7.10.1

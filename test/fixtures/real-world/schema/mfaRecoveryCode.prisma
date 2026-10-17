@@ -1,0 +1,14 @@
+model MfaRecoveryCode {
+  id        Int       @id @default(autoincrement()) @db.Integer
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  /// @DtoHidden
+  userId    Int       @map("user_id") @db.Integer
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  /// @DtoHidden
+  codeHash  String    @map("code_hash") @db.VarChar(255)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+
+  @@index([userId])
+  @@map("mfa_recovery_code")
+}

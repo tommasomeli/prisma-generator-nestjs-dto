@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { ImportType } from './types';
+import { ImportType, ScalarOverride } from './types';
 
 /**
  * Stateless helpers used by the generator pipeline: leveled logger with a
@@ -102,7 +102,7 @@ export class Utility {
      * {@link applyConfigFile}) or an already-parsed `Record<string, ScalarOverride>` object.
      * Invalid entries are skipped with a warning rather than throwing.
      */
-    static parseExtraScalars(value: unknown): Record<string, { ts: string; from?: string; apiType?: string; format?: string }> {
+    static parseExtraScalars(value: unknown): Record<string, ScalarOverride> {
         if (!value) return {};
         let parsed: unknown = value;
         if (typeof value === 'string') {
@@ -113,19 +113,20 @@ export class Utility {
             }
         }
         if (!parsed || typeof parsed !== 'object') return {};
-        const out: Record<string, { ts: string; from?: string; apiType?: string; format?: string }> = {};
+        const out: Record<string, ScalarOverride> = {};
         for (const [scalar, raw] of Object.entries(parsed as Record<string, unknown>)) {
             if (!raw || typeof raw !== 'object') continue;
-            const override = raw as { ts?: unknown; from?: unknown; apiType?: unknown; format?: unknown };
-            if (typeof override.ts !== 'string') {
+            const override = raw as { ts?: unknown; from?: unknown; apiType?: unknown; format?: unknown; zod?: unknown };
+            if (typeof override.ts !== 'string' && typeof override.zod !== 'string') {
                 Utility.warn(`extraScalars["${scalar}"] is missing a string \`ts\` field, ignoring.`);
                 continue;
             }
             out[scalar] = {
-                ts: override.ts,
+                ts: typeof override.ts === 'string' ? override.ts : 'unknown',
                 from: typeof override.from === 'string' ? override.from : undefined,
                 apiType: typeof override.apiType === 'string' ? override.apiType : undefined,
-                format: typeof override.format === 'string' ? override.format : undefined
+                format: typeof override.format === 'string' ? override.format : undefined,
+                ...(typeof override.zod === 'string' ? { zod: override.zod } : {})
             };
         }
         return out;

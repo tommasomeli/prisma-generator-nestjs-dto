@@ -1,0 +1,45 @@
+model User {
+  id           Int           @id @default(autoincrement()) @db.Integer
+  createdAt    DateTime?     @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt    DateTime?     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz()
+  firstName    String?       @map("first_name") @db.VarChar(255)
+  lastName     String?       @map("last_name") @db.VarChar(255)
+  /// @IsUnique({ message: i18nValidationMessage('validation.fields.username_exists') })
+  userName     String?       @unique(map: "user_user_name_unique") @map("user_name") @db.VarChar(255)
+  /// @IsUnique({ message: i18nValidationMessage('validation.fields.email_exists') })
+  email        String?       @unique(map: "user_email_unique") @map("email") @db.VarChar(255)
+  gCalendarUrl String?       @map("g_calendar_url") @db.Text
+  avatarUrl    String?       @map("avatar_url") @db.Text
+  role         UserRole?     @default(guest)
+  /// @Length(6, 20, { message: i18nValidationMessage('validation.fields.password') })
+  /// @Matches(CONSTANTS.PASS_REGEX, { message: i18nValidationMessage('validation.fields.password') })
+  password     String?       @db.VarChar(255)
+  isActive     Boolean?      @default(false) @map("is_active")
+  activatable  Boolean?      @default(false) @map("activatable")
+  provider     UserProvider? @default(local)
+  /// @DtoHidden
+  avatarId     Int?          @unique(map: "user_avatar_id_unique") @db.Integer
+  avatar       Media?        @relation(fields: [avatarId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  /// @DtoHidden
+  languageId   Int?          @db.Integer
+  language     Language?     @relation(fields: [languageId], references: [id], onDelete: SetNull)
+  mfaEnabled           Boolean    @default(false) @map("mfa_enabled")
+  mfaMethod            MfaMethod? @map("mfa_method")
+  /// @DtoHidden
+  mfaSecret            String?    @map("mfa_secret") @db.Text
+  /// @DtoHidden
+  mfaPendingSecret     String?    @map("mfa_pending_secret") @db.Text
+  /// @DtoHidden
+  mfaEmailOtpHash      String?    @map("mfa_email_otp_hash") @db.VarChar(255)
+  /// @DtoHidden
+  mfaEmailOtpExpiresAt DateTime?  @map("mfa_email_otp_expires_at") @db.Timestamptz()
+  /// @DtoHidden
+  mfaEmailOtpAttempts  Int        @default(0) @map("mfa_email_otp_attempts")
+  /// @DtoHidden
+  mfaRecoveryCodes     MfaRecoveryCode[]
+
+  @@index([deletedAt])
+  @@index([languageId])
+  @@map("user")
+}

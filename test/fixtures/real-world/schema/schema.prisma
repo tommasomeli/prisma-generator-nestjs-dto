@@ -1,0 +1,17 @@
+generator contracts {
+  provider           = env("NESTJS_DTO_GENERATOR")
+  output             = "../../../.output/real-world"
+  configFile         = "../zod.config.ts"
+  outputType         = "zod"
+  outputStructure    = "nestjs"
+  reExport           = "true"
+  fileNamingStrategy = "kebab"
+  prettier           = "false"
+  schemaDir          = "test/fixtures/real-world/schema"
+  emitManifest       = "true"
+  zodMeta            = "true"
+}
+
+datasource db {
+  provider = "postgresql"
+}

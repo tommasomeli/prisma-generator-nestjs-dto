@@ -1,0 +1,16 @@
+model MediaPath {
+  id        Int         @id @default(autoincrement()) @db.Integer
+  createdAt DateTime?   @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime?   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime?   @map("deleted_at") @db.Timestamptz()
+  pathname  String?     @db.VarChar(255)
+  /// @DtoHidden
+  parentId  Int?        @map("parent_id") @db.Integer
+  parent    MediaPath?  @relation("mediaPathToMediaPath", fields: [parentId], references: [id], onDelete: Cascade)
+  children  MediaPath[] @relation("mediaPathToMediaPath")
+  media     Media[]
+
+  @@index([deletedAt])
+  @@index([parentId])
+  @@map("media_path")
+}

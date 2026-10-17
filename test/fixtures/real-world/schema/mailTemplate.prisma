@@ -1,0 +1,18 @@
+model MailTemplate {
+  id        Int       @id @default(autoincrement()) @db.Integer
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz() /// @createdAt
+  updatedAt DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  name      String    @db.Text
+  label     String    @db.Text
+  from      String?   @db.Text
+  to        String[]  @db.Text
+  toTest    String[]  @map("bcc_test") @db.Text
+  cc        String[]  @db.Text
+  bcc       String[]  @db.Text
+  subject   Json?     @db.Json
+  body      Json      @db.Json
+
+  @@index([deletedAt])
+  @@map("mail_template")
+}
