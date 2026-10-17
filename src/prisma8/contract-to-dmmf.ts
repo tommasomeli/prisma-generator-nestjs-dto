@@ -12,6 +12,8 @@ import type {
     ContractModelExtras,
     ContractRelation,
     ContractRelationExtras,
+    ContractStorageNativeEnum,
+    ContractStorageValueSet,
     ContractTable,
     ContractToDatamodelOptions,
     ContractValueObject,
@@ -48,6 +50,58 @@ function buildNameTable(entries: [string, string][], label: string, warn: (messa
     }
     for (const [name, count] of counts) if (count > 1) warn(`${label} "${name}" is declared in several namespaces; emitting it as ${byName.get(name)!.join(', ')}.`);
     return (ns, name) => (ns !== undefined && byKey.get(key(ns, name))) || byName.get(name)?.[0] || name;
+}
+
+/** A native enum found in storage (`entries.valueSet` / `entries.native_enum`) with no domain enum of the same name. */
+type StorageEnum = { nsId: string; name: string; valueSet?: ContractStorageValueSet; nativeEnum?: ContractStorageNativeEnum };
+
+/** Turns a stored enum value into a TypeScript-safe member name (`in-progress` → `in_progress`, `1st` → `_1st`). */
+const memberName = (value: string): string => {
+    const name = value.replace(/[^\w$]/g, '_');
+    return /^[A-Za-z_$]/.test(name) ? name : `_${name}`;
+};
+
+/**
+ * Collects the native Postgres enums of the storage plane: every `entries.valueSet` (members in order)
+ * and `entries.native_enum` entry whose name is not already a domain enum.
+ */
+function collectStorageEnums(contract: Prisma8Contract, domainEnumNames: ReadonlySet<string>): StorageEnum[] {
+    const out: StorageEnum[] = [];
+    for (const [nsId, ns] of Object.entries(contract.storage?.namespaces ?? {})) {
+        const valueSets = ns?.entries?.valueSet ?? {};
+        const nativeEnums = ns?.entries?.native_enum ?? {};
+        for (const name of new Set([...Object.keys(valueSets), ...Object.keys(nativeEnums)])) {
+            if (domainEnumNames.has(name)) continue;
+            out.push({ nsId, name, valueSet: valueSets[name], nativeEnum: nativeEnums[name] });
+        }
+    }
+    return out;
+}
+
+/**
+ * Column-tuple unique constraints of a table, as DMMF sees them: `uniques[]` plus `unique: true` entries of
+ * `indexes[]`. Entries without a column tuple (expression indexes, `expression` instead of `columns`) and
+ * partial unique indexes (`where`) do not map to a model-level unique and are skipped.
+ */
+function uniqueColumnSets(table: ContractTable | undefined): { name: string | null; columns: string[] }[] {
+    const hasColumns = (entry: { columns?: readonly string[] }): boolean => Array.isArray(entry.columns) && entry.columns.length > 0;
+    const uniques = (table?.uniques ?? []).filter(hasColumns).map((u) => ({ name: u.name ?? null, columns: [...u.columns] }));
+    const indexes = (table?.indexes ?? []).filter((i) => i.unique && !i.where && !i.expression && hasColumns(i)).map((i) => ({ name: i.name ?? null, columns: [...(i.columns ?? [])] }));
+    return [...uniques, ...indexes];
+}
+
+/**
+ * Reorders `items` by the position of their raw (PSL) name in `order`; names absent from `order` keep
+ * their relative order and come last. A no-op when `order` is empty.
+ */
+function sortByPslOrder<T>(items: { raw: string; value: T }[], order: readonly string[]): T[] {
+    if (order.length === 0) return items.map((i) => i.value);
+    const rank = new Map(order.map((name, i) => [name, i]));
+    const of = (raw: string): number => rank.get(raw) ?? order.length;
+    return items
+        .map((item, i) => ({ item, i }))
+        .sort((a, b) => of(a.item.raw) - of(b.item.raw) || a.i - b.i)
+        .map(({ item }) => item.value);
 }
 
 /** Parses the numeric/string arguments of a default function call (`uuid(7)` → `[7]`). */
@@ -131,8 +185,10 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
         'Model',
         warn
     );
+    const domainEnumEntries = namespaces.flatMap(([nsId, ns]) => Object.keys(ns.enum ?? {}).map((n): [string, string] => [nsId, n]));
+    const storageEnums = collectStorageEnums(contract, new Set(domainEnumEntries.map(([, n]) => n)));
     const enumName = buildNameTable(
-        namespaces.flatMap(([nsId, ns]) => Object.keys(ns.enum ?? {}).map((n): [string, string] => [nsId, n])),
+        [...domainEnumEntries, ...storageEnums.map((e): [string, string] => [e.nsId, e.name])],
         'Enum',
         warn
     );
@@ -156,7 +212,7 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
         if (relation.cardinality !== '1:1' || !relation.on) return false;
         const table = tableOf(model);
         const columns = relation.on.localFields.map((f) => model.storage?.fields?.[f]?.column ?? f);
-        if (table?.foreignKeys) return table.foreignKeys.some((fk) => sameSet(fk.source.columns, columns));
+        if (table?.foreignKeys) return table.foreignKeys.some((fk) => sameSet(fk.source?.columns ?? [], columns));
         const pk = table?.primaryKey?.columns ?? [];
         return !columns.every((c) => pk.includes(c));
     };
@@ -184,7 +240,7 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
     };
 
     const renameRef = (resolved: ReturnType<typeof resolveScalar>, field: Field, nsId: string): string => {
-        if (resolved.kind === 'enum') return enumName(field.valueSet?.namespaceId ?? nsId, resolved.type);
+        if (resolved.kind === 'enum') return enumName(resolved.namespaceId ?? field.valueSet?.namespaceId ?? nsId, resolved.type);
         if (resolved.kind === 'object') return valueObjectName((field.type.namespace as string | undefined) ?? nsId, resolved.type);
         return resolved.type;
     };
@@ -211,7 +267,7 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
         return dmmf as unknown as DMMF.Field;
     };
 
-    const models: DMMF.Model[] = [];
+    const models: { raw: string; value: DMMF.Model }[] = [];
     for (const [nsId, ns] of namespaces) {
         for (const [rawName, rawModel] of Object.entries(ns.models ?? {})) {
             const model = rawModel as Model;
@@ -226,7 +282,7 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
             const toFields = (columns: readonly string[]): string[] => columns.map((c) => fieldOfColumn.get(c) ?? c);
 
             const pkColumns = table?.primaryKey?.columns ?? [];
-            const uniqueSets = [...(table?.uniques ?? []).map((u) => ({ name: u.name ?? null, columns: u.columns })), ...(table?.indexes ?? []).filter((i) => i.unique).map((i) => ({ name: i.name ?? null, columns: i.columns }))];
+            const uniqueSets = uniqueColumnSets(table);
             const singleUniques = new Set(uniqueSets.filter((u) => u.columns.length === 1).map((u) => u.columns[0]));
             const compoundUniques = uniqueSets.filter((u) => u.columns.length > 1);
 
@@ -298,11 +354,11 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
                 isGenerated: false
             };
             if (modelAnnotation?.doc) out.documentation = modelAnnotation.doc;
-            models.push(out as unknown as DMMF.Model);
+            models.push({ raw: rawName, value: out as unknown as DMMF.Model });
         }
     }
 
-    const enums: DMMF.DatamodelEnum[] = [];
+    const enums: { raw: string; value: DMMF.DatamodelEnum }[] = [];
     for (const [nsId, ns] of namespaces) {
         for (const [rawName, contractEnum] of Object.entries(ns.enum ?? {})) {
             const out: Record<string, unknown> = {
@@ -312,11 +368,27 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
             };
             const doc = annotations.get(rawName)?.doc;
             if (doc) out.documentation = doc;
-            enums.push(out as unknown as DMMF.DatamodelEnum);
+            enums.push({ raw: rawName, value: out as unknown as DMMF.DatamodelEnum });
         }
     }
+    for (const storageEnum of storageEnums) {
+        const values = storageEnum.valueSet?.values ?? storageEnum.nativeEnum?.members ?? [];
+        const typeName = storageEnum.nativeEnum?.typeName;
+        const out: Record<string, unknown> = {
+            name: enumName(storageEnum.nsId, storageEnum.name),
+            values: values.map((raw) => {
+                const value = String(raw);
+                const name = memberName(value);
+                return { name, dbName: name === value ? null : value };
+            }),
+            dbName: typeName && typeName !== storageEnum.name ? typeName : null
+        };
+        const doc = annotations.get(storageEnum.name)?.doc;
+        if (doc) out.documentation = doc;
+        enums.push({ raw: storageEnum.name, value: out as unknown as DMMF.DatamodelEnum });
+    }
 
-    const types: DMMF.Model[] = [];
+    const types: { raw: string; value: DMMF.Model }[] = [];
     for (const [nsId, ns] of namespaces) {
         for (const [rawName, valueObject] of Object.entries(valueObjectsOf(ns))) {
             const voAnnotation = annotations.get(rawName);
@@ -332,9 +404,12 @@ export function contractToDatamodel(contract: Prisma8Contract, options: Contract
                 isGenerated: false
             };
             if (voAnnotation?.doc) out.documentation = voAnnotation.doc;
-            types.push(out as unknown as DMMF.Model);
+            types.push({ raw: rawName, value: out as unknown as DMMF.Model });
         }
     }
 
-    return { models, enums, types, indexes: [] };
+    // `contract.json` sorts entries alphabetically; the PSL annotation map is in declaration order (the order
+    // Prisma 5-7 DMMF follows), so use it when PSL sources were read.
+    const pslOrder = [...annotations.keys()];
+    return { models: sortByPslOrder(models, pslOrder), enums: sortByPslOrder(enums, pslOrder), types: sortByPslOrder(types, pslOrder), indexes: [] };
 }

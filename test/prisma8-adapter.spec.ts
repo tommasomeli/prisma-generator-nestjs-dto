@@ -9,10 +9,12 @@ import { contractToDatamodel } from '../src/prisma8/contract-to-dmmf';
 import type { AnnotationMap, ContractColumn, ContractDomainField, FieldAnnotations, Prisma8Contract } from '../src/prisma8/types';
 import blogJson from './fixtures/prisma8/blog/contract.json';
 import kitchenSinkJson from './fixtures/prisma8/kitchen-sink/contract.json';
+import nativeEnumsJson from './fixtures/prisma8/native-enums/contract.json';
 import { buildOptions } from './helpers/build-options';
 
 const blog = blogJson as unknown as Prisma8Contract;
 const kitchenSink = kitchenSinkJson as unknown as Prisma8Contract;
+const nativeEnums = nativeEnumsJson as unknown as Prisma8Contract;
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 /** Runs the adapter collecting warnings instead of printing them. */
@@ -45,11 +47,15 @@ describe('codec-map resolveScalar (§3)', () => {
         ['pg/bit@1', 'String', ['Bit', ['8']], { length: 8 }],
         ['pg/varbit@1', 'String', ['VarBit', []]],
         ['pg/interval@1', 'String', ['Interval', []]],
-        ['pg/time-string@1', 'String', ['Time', []]],
-        ['pg/timetz@1', 'String', ['Timetz', []]],
-        ['pg/date-string@1', 'String', ['Date', []]],
-        ['pg/timestamp-string@1', 'String', ['Timestamp', []]],
-        ['pg/timestamptz-string@1', 'String', ['Timestamptz', ['3']], { precision: 3 }],
+        ['pg/time-temporal@1', 'String', ['Time', []]],
+        ['pg/enum@1', 'String', null],
+        // String-backed temporal codecs are DateTime for DTO purposes.
+        ['pg/time-string@1', 'DateTime', ['Time', []]],
+        ['pg/timetz@1', 'DateTime', ['Timetz', []]],
+        ['pg/date-string@1', 'DateTime', ['Date', []]],
+        ['pg/timestamp-string@1', 'DateTime', ['Timestamp', []]],
+        ['pg/timestamptz-string@1', 'DateTime', ['Timestamptz', []]],
+        ['pg/timestamptz-string@1', 'DateTime', ['Timestamptz', ['3']], { precision: 3 }],
         ['pg/bool@1', 'Boolean', null],
         ['pg/int2@1', 'Int', ['SmallInt', []]],
         ['pg/int4@1', 'Int', null],
@@ -100,6 +106,13 @@ describe('codec-map resolveScalar (§3)', () => {
         const resolved = resolveScalar(scalar('pg/vector@1'), column('pg/vector@1', 'pg/vector'), { scalarOverrideKeys: ['pg/vector@1'], warn: (m) => warnings.push(m) });
         expect(resolved).toEqual({ type: 'pg/vector@1', kind: 'scalar', nativeType: ['pg/vector', []] });
         expect(warnings).toEqual([]);
+    });
+
+    it('maps native enums (pg/enum@1) through the column valueSet, then typeParams.typeName', () => {
+        const field = scalar('pg/enum@1', { typeName: 'UserRole' });
+        expect(resolveScalar(field, undefined)).toEqual({ type: 'UserRole', kind: 'enum', nativeType: null });
+        const col = { ...column('pg/enum@1', 'pg/enum'), valueSet: { entityKind: 'valueSet', entityName: 'Role', namespaceId: 'auth', plane: 'storage' } } as ContractColumn;
+        expect(resolveScalar(field, col)).toEqual({ type: 'Role', kind: 'enum', nativeType: null, namespaceId: 'auth' });
     });
 
     it('emits union field types as Unsupported', () => {
@@ -179,6 +192,8 @@ describe('contractToDatamodel: blog fixture (§4)', () => {
         const annotations = blogAnnotations();
         const { model: m, field: f, datamodel: d } = convert(blog, { annotations });
         expect(m('User').fields.map((x) => x.name)).toEqual(['id', 'email', 'name', 'passwordHash', 'role', 'bio', 'posts', 'createdAt', 'updatedAt']);
+        // Models follow the PSL declaration order (User before Post), not the alphabetical JSON order.
+        expect(d.models.map((x) => x.name)).toEqual(['User', 'Post']);
         expect(m('User').documentation).toBe('@Auditable("user_audit")');
         expect(f('User', 'passwordHash').documentation).toBe('Field hidden from every emitted DTO.\n@DtoHidden');
         expect(f('Post', 'title').documentation).toBe('@MaxLength(120)');
@@ -193,6 +208,83 @@ describe('contractToDatamodel: blog fixture (§4)', () => {
         const { warnings: w, datamodel: d } = convert(future);
         expect(d.models).toHaveLength(2);
         expect(w.some((x) => x.includes('schemaVersion "2"'))).toBe(true);
+    });
+});
+
+describe('contractToDatamodel: native-enums fixture (storage valueSet, string temporal codecs)', () => {
+    const { datamodel, warnings, field } = convert(nativeEnums);
+
+    it('builds enums from storage.entries.valueSet, members in order, with no warnings', () => {
+        expect(warnings).toEqual([]);
+        expect(datamodel.enums).toEqual([
+            { name: 'MemberRole', values: ['owner', 'admin', 'member'].map((name) => ({ name, dbName: null })), dbName: null },
+            { name: 'TicketStatus', values: ['open', 'in_progress', 'closed'].map((name) => ({ name, dbName: null })), dbName: null }
+        ]);
+    });
+
+    it('references native enums from required, nullable and list fields', () => {
+        expect(field('Member', 'role')).toMatchObject({ kind: 'enum', type: 'MemberRole', isRequired: true, isList: false, nativeType: null, hasDefaultValue: true, default: 'member' });
+        expect(field('Member', 'pastRoles')).toMatchObject({ kind: 'enum', type: 'MemberRole', isList: true });
+        expect(field('Ticket', 'status')).toMatchObject({ kind: 'enum', type: 'TicketStatus', isRequired: false });
+    });
+
+    it('maps string-backed temporal codecs to DateTime with their native type', () => {
+        expect(field('Member', 'createdAt')).toMatchObject({ kind: 'scalar', type: 'DateTime', nativeType: ['Timestamptz', []], default: { name: 'now', args: [] } });
+        expect(field('Member', 'lastSeenAt')).toMatchObject({ type: 'DateTime', isRequired: false, nativeType: ['Timestamptz', []] });
+        expect(field('Ticket', 'dueOn')).toMatchObject({ type: 'DateTime', nativeType: ['Date', []] });
+    });
+
+    it('falls back to typeParams.typeName without a column valueSet and to native_enum members without a valueSet', () => {
+        const contract = clone(nativeEnums);
+        const entries = contract.storage.namespaces.public.entries;
+        delete entries.table.ticket.columns.status.valueSet;
+        delete entries.valueSet!.TicketStatus;
+        entries.native_enum!.TicketStatus = { kind: 'postgres-enum', members: ['open', 'in-progress'], typeName: 'ticket_status' };
+        const { datamodel: d, field: f } = convert(contract);
+        expect(f('Ticket', 'status')).toMatchObject({ kind: 'enum', type: 'TicketStatus' });
+        expect(d.enums.find((e) => e.name === 'TicketStatus')).toEqual({
+            name: 'TicketStatus',
+            values: [
+                { name: 'open', dbName: null },
+                { name: 'in_progress', dbName: 'in-progress' }
+            ],
+            dbName: 'ticket_status'
+        });
+    });
+
+    it('skips expression and partial unique indexes (no columns / `where`) for isUnique and uniqueFields', () => {
+        expect(convert(nativeEnums).model('Member')).toMatchObject({ uniqueFields: [], uniqueIndexes: [] });
+        expect(convert(nativeEnums).model('Ticket')).toMatchObject({ uniqueFields: [], uniqueIndexes: [] });
+        const contract = clone(nativeEnums);
+        const table = contract.storage.namespaces.public.entries.table.ticket;
+        table.uniques = [{ name: 'no_columns' } as unknown as { columns: string[] }, { columns: ['title'] }];
+        table.indexes!.push({ columns: ['authorId', 'title'], name: 'ticket_author_title_key', unique: true });
+        const { model: m, field: f } = convert(contract);
+        expect(f('Ticket', 'title').isUnique).toBe(true);
+        expect(m('Ticket').uniqueIndexes).toEqual([{ name: 'ticket_author_title_key', fields: ['authorId', 'title'] }]);
+    });
+
+    it('orders models and enums by PSL declaration order when annotations are present, JSON order otherwise', () => {
+        expect(datamodel.models.map((m) => m.name)).toEqual(['Member', 'Ticket']);
+        expect(datamodel.enums.map((e) => e.name)).toEqual(['MemberRole', 'TicketStatus']);
+        const annotations: AnnotationMap = new Map([
+            ['TicketStatus', { fields: new Map() }],
+            ['Ticket', { fields: new Map() }],
+            ['MemberRole', { fields: new Map() }]
+        ]);
+        const { datamodel: d } = convert(nativeEnums, { annotations });
+        // `Member` is not in the PSL: it keeps its JSON position after the declared models.
+        expect(d.models.map((m) => m.name)).toEqual(['Ticket', 'Member']);
+        expect(d.enums.map((e) => e.name)).toEqual(['TicketStatus', 'MemberRole']);
+    });
+
+    it('emits an enum present both as a domain enum and as a storage valueSet once (domain wins)', () => {
+        expect(convert(blog).datamodel.enums.map((e) => e.name)).toEqual(['Role']);
+        const contract = clone(nativeEnums);
+        contract.domain.namespaces.public.enum = { MemberRole: { codecId: 'pg/text@1', members: [{ name: 'OWNER', value: 'owner' }] } };
+        const { datamodel: d } = convert(contract);
+        expect(d.enums.map((e) => e.name)).toEqual(['MemberRole', 'TicketStatus']);
+        expect(d.enums[0].values).toEqual([{ name: 'OWNER', dbName: 'owner' }]);
     });
 });
 

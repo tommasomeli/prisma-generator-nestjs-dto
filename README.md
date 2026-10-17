@@ -155,9 +155,9 @@ Keep writing `///` comments in `contract.prisma`. The generator re-reads the PSL
 | ----------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `Decimal`   | `string` (Swagger `format: 'decimal'`; `z.string()` in Zod mode)          | Prisma 8's application type; no `Prisma.Decimal` import.             |
 | `Json`      | `JsonValue`, `import type` from `@prisma/orm-framework/utils/json`        | No `Prisma.JsonValue` import.                                        |
-| `DateTime`  | `Date` + `@IsDateString`                                                  | Unchanged: HTTP carries ISO strings.                                 |
+| `DateTime`  | `Date` + `@IsDateString`                                                  | Unchanged: HTTP carries ISO strings. String-backed temporal codecs (`pg/timestamptz-string@1`, `pg/date-string@1`, `pg/time-string@1`, ...) are treated as `DateTime` for DTO purposes. |
 | `BigInt`    | `bigint`                                                                  | Numeric defaults render as `BigInt(n)`.                              |
-| Enums       | local files in `<output>/enums/<name>.enum.ts`                            | No `@prisma/client`; numeric members (`Low = 0`) are supported; defaults render as members (`Role.USER`). Zod mode emits `z.enum({...})` for numeric enums. |
+| Enums       | local files in `<output>/enums/<name>.enum.ts`                            | No `@prisma/client`; numeric members (`Low = 0`) are supported; defaults render as members (`Role.USER`). Zod mode emits `z.enum({...})` for numeric enums. Native Postgres enums (`pg/enum@1`, as written by `prisma contract infer` or from Prisma 7 schemas) are read from the contract's storage value sets. |
 | Native types | `VarChar(255)` -> `@MaxLength(255)`, `Uuid` -> `@IsUUID`, ...            | Only PostgreSQL is covered by tests; SQLite and MongoDB codec tables are empty for now. |
 
 All of the scalar defaults can be overridden through [`extraScalars`](#extrascalars--per-scalar-overrides) (including `typeOnly: true` for `import type`, and `format: ''` to drop the Swagger format). `emitManifest` inlines the `ModelName` union instead of importing `Prisma.ModelName`.

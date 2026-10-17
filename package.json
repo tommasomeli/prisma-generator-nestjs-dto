@@ -1,6 +1,6 @@
 {
     "name": "@tommasomeli/prisma-generator-nestjs-dto",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "description": "A pluggable Prisma generator (Prisma 5-7 and Prisma ORM 8 contracts) that produces NestJS DTOs (Create/Update/Entity) with Swagger metadata and class-validator decorators, or framework-free Zod 4 schemas. Bring your own annotations and custom sub-generators.",
     "keywords": [
         "prisma",

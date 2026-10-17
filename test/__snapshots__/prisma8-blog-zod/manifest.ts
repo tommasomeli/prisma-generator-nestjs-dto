@@ -1,4 +1,4 @@
-export type ModelName = 'Post' | 'User';
+export type ModelName = 'User' | 'Post';
 
 export interface RelationDescriptor {
     type: string;
@@ -12,25 +12,6 @@ export interface ModelManifest {
 }
 
 export const PrismaManifest: Record<ModelName, ModelManifest> = {
-    "Post": {
-        "primaryKey": "id",
-        "entityFields": [
-            "id",
-            "title",
-            "body",
-            "score",
-            "meta",
-            "author",
-            "authorId",
-            "createdAt"
-        ],
-        "relations": {
-            "author": {
-                "type": "User",
-                "isList": false
-            }
-        }
-    },
     "User": {
         "primaryKey": "id",
         "entityFields": [
@@ -47,6 +28,25 @@ export const PrismaManifest: Record<ModelName, ModelManifest> = {
             "posts": {
                 "type": "Post",
                 "isList": true
+            }
+        }
+    },
+    "Post": {
+        "primaryKey": "id",
+        "entityFields": [
+            "id",
+            "title",
+            "body",
+            "score",
+            "meta",
+            "author",
+            "authorId",
+            "createdAt"
+        ],
+        "relations": {
+            "author": {
+                "type": "User",
+                "isList": false
             }
         }
     }

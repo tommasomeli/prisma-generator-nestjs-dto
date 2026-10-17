@@ -114,6 +114,28 @@ describe("Prisma 8 PSL annotations", () => {
     expect([...role.fields.keys()]).toEqual(["ADMIN", "USER"]);
   });
 
+  it("records native_enum blocks (prisma contract infer) in declaration order", async () => {
+    const parser = (await loadPslParser())!;
+    const source = [
+      "namespace public {",
+      "  model Ticket {",
+      "    id Int @id",
+      "  }",
+      "  /// Ticket lifecycle",
+      "  native_enum TicketStatus {",
+      '    open = "open"',
+      '    closed = "closed"',
+      "  }",
+      "  native_enum MemberRole {",
+      '    owner = "owner"',
+      "  }",
+      "}",
+    ].join("\n");
+    const map = extractAnnotations(parser, source, "contract.prisma");
+    expect([...map.keys()]).toEqual(["Ticket", "TicketStatus", "MemberRole"]);
+    expect(map.get("TicketStatus")!.doc).toBe("Ticket lifecycle");
+  });
+
   it("records type blocks, enum member docs, namespaced models and list/optional variants", async () => {
     const parser = (await loadPslParser())!;
     const source = [

@@ -90,13 +90,21 @@ export type ContractColumn = {
     dataType: string;
     nullable: boolean;
     default?: ContractColumnDefault;
+    /** Codec parameters (`{ length }`, `{ precision }`, `{ typeName }` for `pg/enum@1`). */
+    typeParams?: Record<string, unknown>;
+    /** Reference to `storage.namespaces.<ns>.entries.valueSet.<entityName>` (`entityKind: 'valueSet'`). */
+    valueSet?: ContractValueSetRef;
 };
 
 export type ContractTable = {
     columns: Record<string, ContractColumn>;
     primaryKey?: { columns: string[] };
     uniques?: { columns: string[]; name?: string }[];
-    indexes?: { columns: string[]; name: string; unique: boolean }[];
+    /**
+     * Secondary indexes: exactly one of `columns` (column tuple) or `expression` (opaque SQL element list,
+     * expression indexes adopted by `prisma contract infer`); `where` is a partial-index predicate.
+     */
+    indexes?: { columns?: string[]; expression?: string; where?: string; name: string; unique: boolean; type?: string; options?: Record<string, unknown> }[];
     foreignKeys?: {
         source: { columns: string[]; namespaceId: string; tableName: string };
         target: { columns: string[]; namespaceId: string; tableName: string };
@@ -108,8 +116,29 @@ export type ContractStorageNamespace = {
     kind: string;
     entries: {
         table: Record<string, ContractTable>;
-        valueSet?: Record<string, unknown>;
+        valueSet?: Record<string, ContractStorageValueSet>;
+        /** Native Postgres enum types (`CREATE TYPE ... AS ENUM`), keyed like `valueSet`. */
+        native_enum?: Record<string, ContractStorageNativeEnum>;
     };
+};
+
+/**
+ * Allowed values of a column (`storage.namespaces.<ns>.entries.valueSet.<Name>`). Written for domain
+ * enums (alongside `domain.namespaces.<ns>.enum`) and, without a domain enum, for native Postgres
+ * enums of contracts produced by `prisma contract infer` or from Prisma 7 schemas.
+ */
+export type ContractStorageValueSet = {
+    kind: 'valueSet' | string;
+    /** Stored values, in declaration order. */
+    values: (string | number)[];
+};
+
+/** Native Postgres enum type (`storage.namespaces.<ns>.entries.native_enum.<Name>`). */
+export type ContractStorageNativeEnum = {
+    kind: 'postgres-enum' | string;
+    members: string[];
+    /** Postgres type name (differs from the key when the enum is mapped). */
+    typeName?: string;
 };
 
 export type Prisma8Contract = {
@@ -231,6 +260,8 @@ export type ResolvedScalar = {
     type: string;
     kind: 'scalar' | 'enum' | 'object' | 'unsupported';
     nativeType: [string, string[]] | null;
+    /** Storage namespace of a native enum reference (`kind: 'enum'` from `pg/enum@1`), when known. */
+    namespaceId?: string;
 };
 
 export type ResolveScalarOptions = {

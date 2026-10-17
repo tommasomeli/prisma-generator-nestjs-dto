@@ -259,9 +259,11 @@ function visitDeclaration(
   }
   const name = declaration.name()?.name();
   if (!name) return;
+  // `native_enum` blocks (native Postgres enums, as written by `prisma contract infer`) are enums too.
+  const keyword = declaration.keyword?.()?.text;
   const isEnum =
     kind === "GenericBlockDeclaration" &&
-    declaration.keyword?.()?.text === "enum";
+    (keyword === "enum" || keyword === "native_enum");
   // Other generic blocks (datasource-like `key = value` blocks) carry no fields; views expose `fields()`.
   const fields = [...(declaration.fields?.() ?? [])];
   if (kind === "GenericBlockDeclaration" && !isEnum && fields.length === 0)

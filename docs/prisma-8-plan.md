@@ -74,7 +74,8 @@ Source of truth: `docs/reference/scalar-types.md` in `prisma/orm`. `nativeType` 
 | `sql/varchar@1` | `String` | `['VarChar', [length]]` | `typeParams.length` → `@MaxLength` in class-validator mode, `.max()` in Zod. |
 | `sql/char@1` | `String` | `['Char', [length]]` | |
 | `pg/uuid@1` | `String` | `['Uuid', []]` | Drives `@IsUUID` / `format: 'uuid'`. |
-| `pg/inet@1`, `pg/bit@1`, `pg/varbit@1`, `pg/interval@1`, `pg/time*`, `pg/timetz@1`, `pg/date-string@1`, `pg/timestamp*-string@1` | `String` | `[dataType, []]` | Transport as string. |
+| `pg/inet@1`, `pg/bit@1`, `pg/varbit@1`, `pg/interval@1`, `pg/time-temporal@1` | `String` | `['Inet'|'Bit'|'VarBit'|'Interval'|'Time', [p?]]` | Transport as string. |
+| `pg/timestamptz-string@1`, `pg/timestamp-string@1`, `pg/date-string@1`, `pg/time-string@1`, `pg/timetz@1` | `DateTime` | `['Timestamptz'|'Timestamp'|'Date'|'Time'|'Timetz', [p?]]` | String-backed temporal codecs (`prisma contract infer`, Prisma 7 schemas) are treated as `DateTime` for DTO purposes (0.3.1). There is no `pg/timetz-string@1`: `pg/timetz@1` is already string-backed. |
 | `pg/bool@1` | `Boolean` | `null` | |
 | `pg/int2@1`, `pg/int4@1`, `pg/int8number@1` | `Int` | `['SmallInt'|null|'BigIntNumber', []]` | `int8number` is read as a JS number by Prisma 8; keep `Int`. |
 | `pg/int8@1`, `pg/unboundedint@1` | `BigInt` | `null` / `['UnboundedInt', []]` | |
@@ -83,7 +84,8 @@ Source of truth: `docs/reference/scalar-types.md` in `prisma/orm`. `nativeType` 
 | `pg/timestamptz-temporal@1`, `pg/timestamptz-date@1`, `pg/timestamp-temporal@1`, `pg/date-temporal@1` | `DateTime` | `['Timestamptz'|'Timestamp'|'Date', [p?]]` | Transport stays `Date` + `@IsDateString`; see D3. |
 | `pg/json@1`, `pg/jsonb@1` | `Json` | `['Json'|'JsonB', []]` | |
 | `pg/bytea@1` | `Bytes` | `null` | |
-| `pg/enum@1` (native enum) and any field with `valueSet.entityKind === 'enum'` | enum reference | `null` | `kind: 'enum'`, `type: <enum name>`; `enums[]` built from `domain.namespaces.*.enum` (members may be numeric — emit `enum` with explicit values). |
+| any field with `valueSet.entityKind === 'enum'` | enum reference | `null` | `kind: 'enum'`, `type: <enum name>`; `enums[]` built from `domain.namespaces.*.enum` (members may be numeric — emit `enum` with explicit values). |
+| `pg/enum@1` (native Postgres enum) | enum reference | `null` | `kind: 'enum'`, `type`: the storage column's `valueSet.entityName`, else `typeParams.typeName`. The enum is built from `storage.namespaces.<ns>.entries.valueSet.<Name>` (`{ kind: 'valueSet', values: [...] }`, members in order; falls back to `entries.native_enum.<Name>.members`). A name that is also a domain enum is emitted once, from the domain. No enum-array codec exists: enum lists are `pg/enum@1` + `many` (0.3.1). |
 | `kind: 'valueObject'` | object reference | `null` | `kind: 'object'`, `type: <TypeName>`; the value object is emitted as its own DTO model with no Create/Update variants (D4). |
 | anything else (`pg/vector@1`, extension codecs) | `Unsupported` unless `extraScalars[codecId]` | `[dataType, []]` | `extraScalars` keys accept full codec ids in addition to Prisma scalar names. Field is skipped from Create/Update and typed `unknown` in the entity, with a one-line warning. |
 
@@ -249,6 +251,21 @@ Findings made while implementing Phases 1-5. Where they contradict §1 or §4, t
 - To-one relations carry their own `nullable`; it is not derived from the foreign-key columns.
 - `N:M` relations (with `through`) and field types of `kind: 'union'` exist. 0.3.0 renders `N:M` as lists
   on both sides and maps unions to `Unsupported`.
+
+- Contracts from `prisma contract infer` (or derived from a Prisma 7 schema) have no `domain.namespaces.<ns>.enum`:
+  native enums are fields `{ codecId: 'pg/enum@1', typeParams: { typeName } }` with no `valueSet`, and the
+  members live in `storage.namespaces.<ns>.entries.valueSet.<Name>` = `{ kind: 'valueSet', values: string[] }`
+  (also mirrored in `entries.native_enum.<Name>` = `{ kind: 'postgres-enum', members, typeName }`). The storage
+  column carries `typeParams.typeName` and `valueSet: { entityKind: 'valueSet', entityName, namespaceId, plane: 'storage' }`.
+  Every storage value set without a domain enum of the same name is emitted (unreferenced ones included). The
+  same contracts use the string-backed temporal codecs (`pg/timestamptz-string@1`, ...) for `DateTime` columns.
+
+- Tables may carry expression indexes (`{ expression, unique, where?, type?, options? }`, no `columns`) and partial
+  indexes (`columns` + `where`). Neither maps to a DMMF unique: only column-tuple, non-partial unique entries feed
+  `isUnique` / `uniqueFields` / `uniqueIndexes` (0.3.1).
+- `contract.json` sorts models and enums alphabetically. When PSL sources are read, models, enums (`enum` and
+  `native_enum` blocks) and value objects follow the PSL declaration order; entities absent from the PSL are appended
+  in JSON order (0.3.1).
 
 ### PSL parser API used (`@prisma/orm-framework/psl-parser/syntax`)
 

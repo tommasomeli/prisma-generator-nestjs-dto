@@ -1,7 +1,7 @@
-import type { Post as PostEntity } from './post/post.entity';
 import type { User as UserEntity } from './user/user.entity';
+import type { Post as PostEntity } from './post/post.entity';
 
 export interface ModelEntityMap {
-    Post: PostEntity;
     User: UserEntity;
+    Post: PostEntity;
 }

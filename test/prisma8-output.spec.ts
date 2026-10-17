@@ -11,6 +11,7 @@ import type { Prisma8Contract } from '../src/prisma8/types';
 import type { RawGeneratorConfig } from '../src/types';
 import blogJson from './fixtures/prisma8/blog/contract.json';
 import kitchenSinkJson from './fixtures/prisma8/kitchen-sink/contract.json';
+import nativeEnumsJson from './fixtures/prisma8/native-enums/contract.json';
 import { buildOptions } from './helpers/build-options';
 import { listTsFiles, typecheck } from './helpers/typecheck';
 
@@ -20,6 +21,7 @@ const DECORATOR_STUBS = path.join(__dirname, 'helpers/decorator-stubs.d.ts');
 
 const blog = () => contractToDatamodel(blogJson as unknown as Prisma8Contract, { annotations: new Map(), warn: () => {} });
 const kitchenSink = () => contractToDatamodel(kitchenSinkJson as unknown as Prisma8Contract, { annotations: new Map(), warn: () => {} });
+const nativeEnums = () => contractToDatamodel(nativeEnumsJson as unknown as Prisma8Contract, { annotations: new Map(), warn: () => {} });
 
 /** Runs the whole pipeline in Prisma 8 mode (D3 defaults injected as the CLI does) and returns the emitted files. */
 async function run(name: string, datamodel: ReturnType<typeof blog>, config: RawGeneratorConfig = {}): Promise<{ dir: string; read: (file: string) => string; files: string[] }> {
@@ -133,6 +135,36 @@ describe('Prisma 8 output: kitchen-sink contract (class mode)', () => {
         expect(create).toContain("balance: z.string().default('0.00')");
         expect(read('account/update-account.schema.ts')).toContain("import { UpdateAddressSchema } from '../address/update-address.schema';");
         expect(read('account/account.schema.ts')).toContain("import { AddressSchema } from '../address/address.schema';");
+        expect(typecheck(listTsFiles(dir))).toEqual([]);
+    });
+});
+
+describe('Prisma 8 output: native-enums contract (storage valueSet enums, string temporal codecs)', () => {
+    it('class mode: emits and imports the native enums, types string temporals as Date, and type-checks', async () => {
+        const { read, files, dir } = await run('native-enums', nativeEnums());
+        expect(files).toEqual(expect.arrayContaining(['enums/member-role.enum.ts', 'enums/ticket-status.enum.ts', 'enums/index.ts']));
+        expect(read('enums/ticket-status.enum.ts')).toBe("export enum TicketStatus {\n    open = 'open',\n    in_progress = 'in_progress',\n    closed = 'closed'\n}\n");
+        const member = read('member/member.entity.ts');
+        expect(member).toContain("import { MemberRole } from '../enums';");
+        expect(member).toContain("@ApiProperty({ enum: MemberRole, enumName: 'MemberRole', isArray: true");
+        expect(member).toContain('pastRoles?: MemberRole[]');
+        expect(member).toContain('role?: MemberRole = MemberRole.member;');
+        expect(member).toContain('lastSeenAt?: Date | null;');
+        expect(read('ticket/ticket.entity.ts')).toContain('status?: TicketStatus | null;');
+        expect(read('member/create-member.dto.ts')).toContain('role?: MemberRole = MemberRole.member;');
+        for (const file of files) expect(read(file), file).not.toMatch(/Unsupported|unknown|@prisma\/client/);
+        expect(typecheck([...listTsFiles(dir), DECORATOR_STUBS])).toEqual([]);
+    });
+
+    it('Zod mode: emits enum schemas, references them and the DateTime schema, and type-checks', async () => {
+        const { read, files, dir } = await run('native-enums-zod', nativeEnums(), { outputType: 'zod' });
+        expect(files).toEqual(expect.arrayContaining(['enums/member-role.enum.ts', 'enums/ticket-status.enum.ts']));
+        expect(read('enums/member-role.enum.ts')).toContain("z.enum(['owner', 'admin', 'member'])");
+        const member = read('member/member.schema.ts');
+        expect(member).toContain('MemberRoleSchema');
+        expect(member).toContain('DateTimeEntitySchema');
+        expect(read('ticket/ticket.schema.ts')).toContain('TicketStatusSchema');
+        for (const file of files) expect(read(file), file).not.toMatch(/Unsupported|z\.unknown\(\)/);
         expect(typecheck(listTsFiles(dir))).toEqual([]);
     });
 });

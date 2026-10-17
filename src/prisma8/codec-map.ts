@@ -47,13 +47,8 @@ export const POSTGRES_CODECS: Readonly<Record<string, CodecMapping>> = {
     'pg/bit@1': map('String', withParams('Bit', ['length'])),
     'pg/varbit@1': map('String', withParams('VarBit', ['length'])),
     'pg/interval@1': map('String', withParams('Interval', ['precision'])),
-    'pg/time-string@1': map('String', withParams('Time', ['precision'])),
     'pg/time-temporal@1': map('String', withParams('Time', ['precision'])),
-    'pg/timetz@1': map('String', withParams('Timetz', ['precision'])),
-    'pg/date-string@1': map('String', fixed('Date')),
-    'pg/timestamp-string@1': map('String', withParams('Timestamp', ['precision'])),
-    'pg/timestamptz-string@1': map('String', withParams('Timestamptz', ['precision'])),
-    // Native enum without a `valueSet` reference (should not happen; enum fields resolve through `valueSet`).
+    // Native enum whose type name cannot be resolved (enum fields normally resolve through `typeParams.typeName`).
     'pg/enum@1': map('String'),
     // Booleans
     'pg/bool@1': map('Boolean'),
@@ -77,6 +72,13 @@ export const POSTGRES_CODECS: Readonly<Record<string, CodecMapping>> = {
     'pg/timestamptz-date@1': map('DateTime', withParams('Timestamptz', ['precision'], true)),
     'pg/timestamp-temporal@1': map('DateTime', withParams('Timestamp', ['precision'])),
     'pg/date-temporal@1': map('DateTime', fixed('Date')),
+    // String-backed temporal codecs (`prisma contract infer`, Prisma 7 schemas): the runtime value is an
+    // ISO string, but for DTO purposes they are `DateTime` like their Prisma 5-7 counterparts.
+    'pg/timestamptz-string@1': map('DateTime', withParams('Timestamptz', ['precision'])),
+    'pg/timestamp-string@1': map('DateTime', withParams('Timestamp', ['precision'])),
+    'pg/date-string@1': map('DateTime', fixed('Date')),
+    'pg/time-string@1': map('DateTime', withParams('Time', ['precision'])),
+    'pg/timetz@1': map('DateTime', withParams('Timetz', ['precision'])),
     // JSON / binary
     'pg/json@1': map('Json', fixed('Json')),
     'pg/jsonb@1': map('Json', fixed('JsonB')),
@@ -106,10 +108,26 @@ export const CODEC_MAP: Readonly<Record<string, CodecMapping>> = { ...POSTGRES_C
 /** Strips the `@<version>` suffix of a codec id (`pg/vector@1` → `pg/vector`). */
 const codecBaseName = (codecId: string): string => codecId.replace(/@\d+$/, '');
 
+/** Codec of native Postgres enums (`CREATE TYPE ... AS ENUM`), as written by `prisma contract infer`. */
+export const NATIVE_ENUM_CODEC_ID = 'pg/enum@1';
+
+/**
+ * Name (and storage namespace, when known) of the native enum behind a `pg/enum@1` field: the storage
+ * column's `valueSet` reference (the key under `storage.namespaces.<ns>.entries.valueSet`) wins over
+ * `typeParams.typeName`.
+ */
+function nativeEnumName(fieldType: ContractDomainField['type'], column: ContractColumn | undefined): { name: string; namespaceId?: string } | null {
+    const ref = column?.valueSet;
+    if (ref?.entityName) return { name: ref.entityName, namespaceId: ref.namespaceId };
+    const typeName = fieldType.typeParams?.typeName ?? column?.typeParams?.typeName;
+    return typeof typeName === 'string' && typeName ? { name: typeName } : null;
+}
+
 /**
  * Resolves the DMMF `type` / `kind` / `nativeType` of a contract domain field.
  *
  * - enum-constrained fields (`valueSet.entityKind === 'enum'`) → `{ kind: 'enum', type: <enum name> }`;
+ * - native Postgres enums (`pg/enum@1`) → `{ kind: 'enum', type: <valueSet name | typeParams.typeName> }`;
  * - value-object fields → `{ kind: 'object', type: <value object name> }`;
  * - known codecs → the Prisma scalar of the codec table (§3), `typeParams` driving `nativeType`;
  * - unknown codecs → `Unsupported` with `nativeType: [dataType, []]` (warned once per codec), unless the
@@ -138,9 +156,14 @@ export function resolveScalar(field: ContractDomainField, column: ContractColumn
         return { type: 'Unsupported', kind: 'unsupported', nativeType: [column?.dataType ?? String(fieldType.kind), []] };
     }
 
+    if (codecId === NATIVE_ENUM_CODEC_ID) {
+        const nativeEnum = nativeEnumName(fieldType, column);
+        if (nativeEnum) return { type: nativeEnum.name, kind: 'enum', nativeType: null, namespaceId: nativeEnum.namespaceId };
+    }
+
     const mapping = CODEC_MAP[codecId];
     if (mapping) {
-        const params = { ...((column as (ContractColumn & { typeParams?: Record<string, unknown> }) | undefined)?.typeParams), ...fieldType.typeParams };
+        const params = { ...column?.typeParams, ...fieldType.typeParams };
         return { type: mapping.scalar, kind: 'scalar', nativeType: mapping.nativeType(params) };
     }
 
