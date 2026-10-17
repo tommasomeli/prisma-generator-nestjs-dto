@@ -1,0 +1,5 @@
+node_modules
+dist
+generated
+src/prisma/contract.json
+src/prisma/contract.d.ts

@@ -1,0 +1,817 @@
+{
+  "schemaVersion": "1",
+  "targetFamily": "sql",
+  "target": "postgres",
+  "roots": {
+    "account": {
+      "model": "Account",
+      "namespace": "public"
+    },
+    "profile": {
+      "model": "Profile",
+      "namespace": "public"
+    },
+    "team": {
+      "model": "Team",
+      "namespace": "public"
+    },
+    "membership": {
+      "model": "Membership",
+      "namespace": "public"
+    }
+  },
+  "execution": {
+    "mutations": {
+      "defaults": [
+        {
+          "onCreate": {
+            "id": "uuidv4",
+            "kind": "generator"
+          },
+          "ref": {
+            "entry": "account",
+            "field": "id",
+            "namespace": "public"
+          }
+        }
+      ]
+    }
+  },
+  "domain": {
+    "namespaces": {
+      "public": {
+        "enum": {
+          "Priority": {
+            "codecId": "pg/int4@1",
+            "members": [
+              {
+                "name": "Low",
+                "value": 0
+              },
+              {
+                "name": "Medium",
+                "value": 1
+              },
+              {
+                "name": "High",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "valueObjects": {
+          "Address": {
+            "fields": {
+              "street": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "city": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "zip": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "models": {
+          "Account": {
+            "fields": {
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "displayName": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "balance": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/numeric@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  }
+                }
+              },
+              "views": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int8@1",
+                  "kind": "scalar"
+                }
+              },
+              "avatar": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/bytea@1",
+                  "kind": "scalar"
+                }
+              },
+              "settings": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/jsonb@1",
+                  "kind": "scalar"
+                }
+              },
+              "embedding": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/vector@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 3
+                  }
+                }
+              },
+              "address": {
+                "nullable": true,
+                "type": {
+                  "kind": "valueObject",
+                  "name": "Address"
+                }
+              },
+              "tags": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                },
+                "many": {
+                  "elementNullable": false
+                }
+              },
+              "priority": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                },
+                "valueSet": {
+                  "entityKind": "enum",
+                  "entityName": "Priority",
+                  "namespaceId": "public",
+                  "plane": "domain"
+                }
+              },
+              "code": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "profile": {
+                "cardinality": "1:1",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "accountId"
+                  ]
+                },
+                "to": {
+                  "model": "Profile",
+                  "namespace": "public"
+                },
+                "nullable": true
+              },
+              "memberships": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "accountId"
+                  ]
+                },
+                "to": {
+                  "model": "Membership",
+                  "namespace": "public"
+                }
+              },
+              "invitations": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "invitedById"
+                  ]
+                },
+                "to": {
+                  "model": "Membership",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "id": {
+                  "column": "id"
+                },
+                "displayName": {
+                  "column": "display_name"
+                },
+                "balance": {
+                  "column": "balance"
+                },
+                "views": {
+                  "column": "views"
+                },
+                "avatar": {
+                  "column": "avatar"
+                },
+                "settings": {
+                  "column": "settings"
+                },
+                "embedding": {
+                  "column": "embedding"
+                },
+                "address": {
+                  "column": "address"
+                },
+                "tags": {
+                  "column": "tags"
+                },
+                "priority": {
+                  "column": "priority"
+                },
+                "code": {
+                  "column": "code"
+                }
+              },
+              "namespaceId": "public",
+              "table": "account"
+            }
+          },
+          "Profile": {
+            "fields": {
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "accountId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "bio": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "account": {
+                "cardinality": "1:1",
+                "on": {
+                  "localFields": [
+                    "accountId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                },
+                "nullable": false
+              }
+            },
+            "storage": {
+              "fields": {
+                "id": {
+                  "column": "id"
+                },
+                "accountId": {
+                  "column": "accountId"
+                },
+                "bio": {
+                  "column": "bio"
+                }
+              },
+              "namespaceId": "public",
+              "table": "profile"
+            }
+          },
+          "Team": {
+            "fields": {
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "orgId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "slug": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "handle": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "memberships": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "teamId"
+                  ]
+                },
+                "to": {
+                  "model": "Membership",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "id": {
+                  "column": "id"
+                },
+                "orgId": {
+                  "column": "orgId"
+                },
+                "slug": {
+                  "column": "slug"
+                },
+                "handle": {
+                  "column": "handle"
+                }
+              },
+              "namespaceId": "public",
+              "table": "Team"
+            }
+          },
+          "Membership": {
+            "fields": {
+              "accountId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "teamId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int4@1",
+                  "kind": "scalar"
+                }
+              },
+              "invitedById": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "active": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "account": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "accountId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                },
+                "nullable": false
+              },
+              "team": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "teamId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Team",
+                  "namespace": "public"
+                },
+                "nullable": false
+              },
+              "invitedBy": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "invitedById"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                },
+                "nullable": true
+              }
+            },
+            "storage": {
+              "fields": {
+                "accountId": {
+                  "column": "accountId"
+                },
+                "teamId": {
+                  "column": "teamId"
+                },
+                "invitedById": {
+                  "column": "invitedById"
+                },
+                "active": {
+                  "column": "active"
+                }
+              },
+              "namespaceId": "public",
+              "table": "membership"
+            }
+          }
+        }
+      }
+    }
+  },
+  "storage": {
+    "namespaces": {
+      "public": {
+        "id": "public",
+        "kind": "postgres-schema",
+        "entries": {
+          "table": {
+            "account": {
+              "columns": {
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": false
+                },
+                "display_name": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": false
+                },
+                "balance": {
+                  "codecId": "pg/numeric@1",
+                  "dataType": "pg/numeric",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  },
+                  "default": {
+                    "kind": "literal",
+                    "value": "0.00"
+                  }
+                },
+                "views": {
+                  "codecId": "pg/int8@1",
+                  "dataType": "pg/int8",
+                  "nullable": false,
+                  "default": {
+                    "kind": "literal",
+                    "value": 0
+                  }
+                },
+                "avatar": {
+                  "codecId": "pg/bytea@1",
+                  "dataType": "pg/bytea",
+                  "nullable": true
+                },
+                "settings": {
+                  "codecId": "pg/jsonb@1",
+                  "dataType": "pg/jsonb",
+                  "nullable": true,
+                  "default": {
+                    "kind": "literal",
+                    "value": {
+                      "theme": "dark"
+                    }
+                  }
+                },
+                "embedding": {
+                  "codecId": "pg/vector@1",
+                  "dataType": "pg/vector",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 3
+                  }
+                },
+                "address": {
+                  "codecId": "pg/jsonb@1",
+                  "dataType": "pg/jsonb",
+                  "nullable": true
+                },
+                "tags": {
+                  "codecId": "pg/text-array@1",
+                  "dataType": "pg/text",
+                  "nullable": false,
+                  "many": {
+                    "elementNullable": false
+                  }
+                },
+                "priority": {
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false,
+                  "default": {
+                    "kind": "literal",
+                    "value": 1
+                  }
+                },
+                "code": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": false,
+                  "default": {
+                    "kind": "function",
+                    "expression": "gen_random_uuid()::text"
+                  }
+                }
+              },
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": [],
+              "indexes": [],
+              "foreignKeys": []
+            },
+            "profile": {
+              "columns": {
+                "id": {
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false,
+                  "default": {
+                    "kind": "function",
+                    "expression": "autoincrement()"
+                  }
+                },
+                "accountId": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": false
+                },
+                "bio": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": true
+                }
+              },
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "accountId"
+                  ]
+                }
+              ],
+              "indexes": [],
+              "foreignKeys": [
+                {
+                  "source": {
+                    "columns": [
+                      "accountId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "profile"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "account"
+                  }
+                }
+              ]
+            },
+            "Team": {
+              "columns": {
+                "id": {
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false,
+                  "default": {
+                    "kind": "function",
+                    "expression": "autoincrement()"
+                  }
+                },
+                "orgId": {
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false
+                },
+                "slug": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": false
+                },
+                "handle": {
+                  "codecId": "pg/text@1",
+                  "dataType": "pg/text",
+                  "nullable": false
+                }
+              },
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ]
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "orgId",
+                    "slug"
+                  ],
+                  "name": "team_org_slug_key"
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "handle"
+                  ],
+                  "name": "team_handle_key",
+                  "unique": true
+                }
+              ],
+              "foreignKeys": []
+            },
+            "membership": {
+              "columns": {
+                "accountId": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": false
+                },
+                "teamId": {
+                  "codecId": "pg/int4@1",
+                  "dataType": "pg/int4",
+                  "nullable": false
+                },
+                "invitedById": {
+                  "codecId": "pg/uuid@1",
+                  "dataType": "pg/uuid",
+                  "nullable": true
+                },
+                "active": {
+                  "codecId": "pg/bool@1",
+                  "dataType": "pg/bool",
+                  "nullable": false,
+                  "default": {
+                    "kind": "literal",
+                    "value": true
+                  }
+                }
+              },
+              "primaryKey": {
+                "columns": [
+                  "accountId",
+                  "teamId"
+                ]
+              },
+              "uniques": [],
+              "indexes": [
+                {
+                  "columns": [
+                    "invitedById"
+                  ],
+                  "name": "membership_invitedById_idx",
+                  "unique": false
+                }
+              ],
+              "foreignKeys": [
+                {
+                  "source": {
+                    "columns": [
+                      "accountId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "membership"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "account"
+                  }
+                },
+                {
+                  "source": {
+                    "columns": [
+                      "teamId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "membership"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "Team"
+                  }
+                },
+                {
+                  "source": {
+                    "columns": [
+                      "invitedById"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "membership"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "account"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

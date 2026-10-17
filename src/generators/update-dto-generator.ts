@@ -11,7 +11,10 @@ export default class UpdateDtoGenerator extends BaseGenerator {
 
     async generate(): Promise<File[]> {
         return this.models.map((model) => {
-            const processedFields = selectUpdateFields(model).map((field) => {
+            // Prisma 8: fields of unmapped codecs (typed `unknown` in the entity) cannot be validated as input.
+            const processedFields = selectUpdateFields(model)
+                .filter((field) => !(this.config.prisma8 && field.kind === 'unsupported'))
+                .map((field) => {
                 const validateIfAnnotation = field.annotations.find((a) => a.name === DTO_UPDATE_VALIDATE_IF);
                 if (validateIfAnnotation && validateIfAnnotation.params && validateIfAnnotation.params.length > 0) {
                     const validateIfParams = validateIfAnnotation.params.join(', ');

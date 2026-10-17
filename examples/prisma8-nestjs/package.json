@@ -1,0 +1,31 @@
+{
+    "name": "@tommasomeli/prisma-generator-nestjs-dto-example-prisma8-nestjs",
+    "version": "0.0.0",
+    "private": true,
+    "description": "Spike: Prisma ORM 8 (ex Prisma Next) contract + NestJS DTO generation from contract.json.",
+    "scripts": {
+        "emit": "prisma contract emit",
+        "generate": "prisma-generator-nestjs-dto --contract ./src/prisma/contract.prisma --output ./generated --config ./nestjs-dto.config.ts",
+        "typecheck": "tsc --noEmit",
+        "start": "tsc -p . && node dist/src/main.js",
+        "dev": "npm run emit && npm run generate && npm run typecheck && npm run start"
+    },
+    "dependencies": {
+        "@prisma/orm-postgres": "8.0.0-rc.18",
+        "@nestjs/common": "^12.1.3",
+        "@nestjs/core": "^12.1.3",
+        "@nestjs/platform-express": "^12.1.3",
+        "@nestjs/swagger": "^12.0.2",
+        "class-transformer": "^0.5.1",
+        "class-validator": "^0.15.1",
+        "reflect-metadata": "^0.2.2",
+        "rxjs": "^7.8.2",
+        "@tommasomeli/prisma-generator-nestjs-dto": "file:../.."
+    },
+    "devDependencies": {
+        "prisma": "8.0.0-rc.23",
+        "typescript": "^5.9.3",
+        "tsx": "^4.21.0",
+        "@types/node": "^22"
+    }
+}

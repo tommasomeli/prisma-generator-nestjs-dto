@@ -65,11 +65,19 @@ function makeModel(input: ModelInput): DMMF.Model {
 /**
  * Creates a `GeneratorOptions` object suitable for instantiating a sub-generator
  * in a test. Provider/output default to plausible values; `config` is merged with
- * sensible defaults so tests only have to declare what they exercise.
+ * sensible defaults so tests only have to declare what they exercise. Pass `datamodel`
+ * to feed a complete DMMF datamodel instead of the minimal `models` / `enums` inputs.
  */
-export function buildOptions(args: { models: ModelInput[]; enums?: EnumInput[]; config?: RawGeneratorConfig; output?: string }): GeneratorOptions {
-    const models = args.models.map(makeModel);
-    const enums = (args.enums ?? []).map((e) => ({ name: e.name, values: e.values.map((name) => ({ name, dbName: null })), dbName: null }));
+export function buildOptions(args: {
+    models?: ModelInput[];
+    enums?: EnumInput[];
+    config?: RawGeneratorConfig;
+    output?: string;
+    /** Ready-made DMMF datamodel (e.g. from the Prisma 8 adapter); replaces `models` / `enums` when given. */
+    datamodel?: { models: DMMF.Model[]; enums: DMMF.DatamodelEnum[]; types?: DMMF.Model[]; indexes?: DMMF.Index[] };
+}): GeneratorOptions {
+    const models = args.datamodel?.models ?? (args.models ?? []).map(makeModel);
+    const enums = args.datamodel?.enums ?? (args.enums ?? []).map((e) => ({ name: e.name, values: e.values.map((name) => ({ name, dbName: null })), dbName: null }));
     return {
         generator: {
             name: 'nestjsDTO',
@@ -93,8 +101,8 @@ export function buildOptions(args: { models: ModelInput[]; enums?: EnumInput[]; 
             datamodel: {
                 models,
                 enums,
-                types: [],
-                indexes: []
+                types: args.datamodel?.types ?? [],
+                indexes: args.datamodel?.indexes ?? []
             },
             schema: {} as any,
             mappings: {} as any,

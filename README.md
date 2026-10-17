@@ -6,13 +6,14 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/tommasomeli)
 
-A Prisma generator for NestJS DTOs with first-class **plugin** and **annotation** APIs.<br/>
+A Prisma generator for NestJS DTOs (Prisma 5-7 and **Prisma ORM 8**) with first-class **plugin** and **annotation** APIs.<br/>
 Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `@nestjs/swagger` decorators, or framework-free **Zod 4 schemas** (`outputType = "zod"`), then gets out of your way.
 
 </div>
 
 ## Features
 
+- **Prisma ORM 8 support**: a CLI that reads the `contract.json` written by `prisma contract emit`, keeps `///` annotations, and emits `@prisma/client`-free DTOs (see [Prisma ORM 8](#prisma-orm-8)).
 - **Zod mode** (`outputType = "zod"`): plain Zod 4 schemas + inferred types for a shared contracts package, consumable by NestJS (`nestjs-zod`, OpenAPI included) and by frontends (react-hook-form) alike.
 - **Pluggable sub-generators** — drop in any `BaseGenerator` subclass next to the built-in DTOs (`extraGenerators`). TypeScript plugin files are loaded directly via `jiti`, no precompilation needed.
 - **Lifecycle hooks** — optional `beforeAll(models)` / `afterAll(files)` on every generator for shared pre/post-passes (model mutation, aggregated barrels, audit reports).
@@ -28,6 +29,7 @@ Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `
 
 - [Install](#install)
 - [Quickstart](#quickstart)
+- [Prisma ORM 8](#prisma-orm-8)
 - [Zod mode](#zod-mode)
 - [Configuration](#configuration)
 - [Plugin system - custom generator](#plugin-system---custom-generator)
@@ -46,9 +48,11 @@ Emits `Create*Dto` / `Update*Dto` / `*Entity` classes with `class-validator` + `
 npm i -D @tommasomeli/prisma-generator-nestjs-dto
 ```
 
-Peers: `@prisma/generator-helper >= 5`, `prettier >= 3` (optional), `zod ^4.1` (optional, only needed by the package that consumes the Zod mode output).
+Peers (all optional): `@prisma/generator-helper >= 5` (only for Prisma 5-7), `@prisma/orm-framework >= 8.0.0-rc.18` (only for Prisma 8, see [Prisma ORM 8](#prisma-orm-8)), `prettier >= 3`, `zod ^4.1` (only needed by the package that consumes the Zod mode output).
 
 ## Quickstart
+
+This is the Prisma 5-7 setup (`generator` block + `prisma generate`). On Prisma ORM 8 jump to [Prisma ORM 8](#prisma-orm-8).
 
 ```prisma
 generator nestjsDto {
@@ -79,6 +83,107 @@ src/generated/nestjs-dto/
     index.ts
   index.ts
 ```
+
+## Prisma ORM 8
+
+Prisma ORM 8 (developed as "Prisma Next"; release candidate today, GA expected in October 2026) has no `prisma generate`, no `generator` block, no DMMF and no `@prisma/client`. The generator therefore reads the `contract.json` that `prisma contract emit` writes, through the same `prisma-generator-nestjs-dto` binary. Prisma 5-7 projects are unaffected: with no arguments the binary is still the Prisma generator described above.
+
+> Prisma 8 itself needs a recent Node (`^22.18 || ^24.11 || >=26`). The generator's runtime still targets Node 18+.
+
+### Install
+
+```bash
+npm i -D @tommasomeli/prisma-generator-nestjs-dto @prisma/orm-framework
+```
+
+`@prisma/orm-framework` (`>=8.0.0-rc.18`, optional peer) provides the PSL parser used to recover `///` annotations. `@prisma/generator-helper` is **not** needed. Keep your `prisma.config.ts` and `contract.prisma` as they are: nothing in them changes.
+
+### Run
+
+```bash
+npx prisma contract emit    # writes contract.json + contract.d.ts next to contract.prisma
+npx prisma-generator-nestjs-dto --contract ./src/prisma/contract.prisma --output ./generated --config ./nestjs-dto.config.ts
+```
+
+Wire both steps into `package.json` (the pattern used by [`examples/prisma8-nestjs`](./examples/prisma8-nestjs)):
+
+```json
+{
+    "scripts": {
+        "emit": "prisma contract emit",
+        "generate": "prisma-generator-nestjs-dto --contract ./src/prisma/contract.prisma --output ./generated --config ./nestjs-dto.config.ts",
+        "dev": "npm run emit && npm run generate"
+    }
+}
+```
+
+| Flag                           | Description                                                                                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--contract <path>`            | `contract.json`, a `contract.prisma` file, a glob of `.prisma` files (quote it), a `prisma.config.ts` or a directory. Default: `prisma.config.{ts,mts,cts,js,mjs,cjs}` in the cwd, when present. |
+| `--output <dir>`               | Output directory. Default: `<contract dir>/../generated/nestjs-dto`.                                                                                  |
+| `--config <file>`              | Generator config file. Default: `nestjs-dto.config.{ts,mts,cts,js,mjs,cjs,json}` in the cwd.                                                          |
+| `--prisma-config <file>`       | Alias of `--contract` for a `prisma.config.ts`.                                                                                                       |
+| `-h, --help` / `-v, --version` | Help / version.                                                                                                                                       |
+
+Exit codes: `0` ok, `1` failure (a missing `contract.json` suggests running `prisma contract emit`), `2` usage error. Set `DEBUG=1` for stack traces.
+
+### Config file
+
+There is no generator block, so every option comes from the config file, in the same [`GeneratorConfigFile`](#external-config-file) format used with `configFile` (`outputType`, `outputStructure`, `extraScalars`, `extraGenerators`, `emitManifest`, ...). CLI flags win over the file.
+
+```ts
+// nestjs-dto.config.ts
+import { type GeneratorConfigFile } from '@tommasomeli/prisma-generator-nestjs-dto';
+
+export default {
+    outputType: 'class',
+    outputStructure: 'nestjs',
+    fileNamingStrategy: 'kebab',
+    swaggerDocs: true,
+    emitManifest: true,
+    extraAnnotations: ['Auditable']
+} satisfies GeneratorConfigFile;
+```
+
+### Annotations
+
+Keep writing `///` comments in `contract.prisma`. The generator re-reads the PSL files with Prisma's own parser (`@prisma/orm-framework/psl-parser/syntax`), because `contract.json` carries no documentation. All [existing annotations](#annotations) (`@DtoHidden`, `@MaxLength(120)`, custom names in `extraAnnotations`, ...) work unchanged. Without `@prisma/orm-framework` installed you get one warning and no annotations.
+
+### What differs from Prisma 5-7
+
+| Prisma type | Prisma 8 mode                                                             | Notes                                                                |
+| ----------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `Decimal`   | `string` (Swagger `format: 'decimal'`; `z.string()` in Zod mode)          | Prisma 8's application type; no `Prisma.Decimal` import.             |
+| `Json`      | `JsonValue`, `import type` from `@prisma/orm-framework/utils/json`        | No `Prisma.JsonValue` import.                                        |
+| `DateTime`  | `Date` + `@IsDateString`                                                  | Unchanged: HTTP carries ISO strings.                                 |
+| `BigInt`    | `bigint`                                                                  | Numeric defaults render as `BigInt(n)`.                              |
+| Enums       | local files in `<output>/enums/<name>.enum.ts`                            | No `@prisma/client`; numeric members (`Low = 0`) are supported; defaults render as members (`Role.USER`). Zod mode emits `z.enum({...})` for numeric enums. |
+| Native types | `VarChar(255)` -> `@MaxLength(255)`, `Uuid` -> `@IsUUID`, ...            | Only PostgreSQL is covered by tests; SQLite and MongoDB codec tables are empty for now. |
+
+All of the scalar defaults can be overridden through [`extraScalars`](#extrascalars--per-scalar-overrides) (including `typeOnly: true` for `import type`, and `format: ''` to drop the Swagger format). `emitManifest` inlines the `ModelName` union instead of importing `Prisma.ModelName`.
+
+**Value objects.** A Prisma 8 `type` block is emitted as its own entity plus `Create<Type>Dto` / `Update<Type>Dto` under `<output>/<type>/`. Parent fields reference it with `@ValidateNested()` and `@Type(() => ...)`: the entity type in the entity, `Create<Type>Dto` in Create DTOs, `Update<Type>Dto` in Update DTOs. Value objects are not part of the manifest `ModelName` union.
+
+**Unsupported codecs.** Fields with a codec the generator does not know (e.g. `pg/vector@1`, extension types) are typed `unknown` in the entity, dropped from Create/Update DTOs, and reported with one warning. Map them with `extraScalars`, whose keys may be full codec ids:
+
+```ts
+extraScalars: {
+    'pg/vector@1': { ts: 'number[]' }
+}
+```
+
+### Limitations
+
+- `contract.ts` (TypeScript authoring) is supported, but it has no doc comments, so there are no annotations. A config-file `annotations` map is planned as a follow-up.
+- `@@base` inheritance and `@@discriminator` are not supported: child models are emitted flat, with a warning.
+- `N:M` relations are rendered as lists on both sides; union field types become `Unsupported`.
+- With several namespaces, bare model names are used and prefixed only on collision.
+
+### Version pinning
+
+Prisma 8 RC packages are not version-locked to each other, and a mismatch fails with misleading contract errors (`CONTRACT.PACK_CONTRIBUTION_INVALID`, `Invalid authoring type constructor "sql.String"`). Pin exact versions. The pair verified on 2026-10-17 is `prisma@8.0.0-rc.23` + `@prisma/orm-postgres@8.0.0-rc.18`.
+
+A runnable NestJS 12 + Swagger project, with a CI job (`prisma8-e2e`, non-blocking until GA) that runs emit, generate and typecheck on Node 22 and 24, lives in [`examples/prisma8-nestjs`](./examples/prisma8-nestjs). Design notes: [`docs/prisma-8-plan.md`](./docs/prisma-8-plan.md).
 
 ## Zod mode
 
@@ -369,7 +474,7 @@ export const serverRules: readonly ServerRule[] = [
 | Option               | Type                        | Default                       | Description                                                                                                                                     |
 | -------------------- | --------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `output`             | string                      | `../src/generated/nestjs-dto` | Destination directory.                                                                                                                          |
-| `configFile`         | string                      | —                             | Path to an external `.ts` / `.cts` / `.mts` / `.js` / `.cjs` / `.mjs` / `.json` config file. See [External config file](#external-config-file). |
+| `configFile`         | string                      | —                             | Path to an external `.ts` / `.cts` / `.mts` / `.js` / `.cjs` / `.mjs` / `.json` config file (Prisma 5-7; on Prisma 8 pass `--config` to the CLI instead). See [External config file](#external-config-file). |
 | `outputType`         | `class` | `interface` | `zod` | `class`                 | TypeScript classes (with decorators), plain interfaces, or Zod schemas (see [Zod mode](#zod-mode)).                                             |
 | `outputStructure`    | `nestjs` | `flat`           | `nestjs`                      | `nestjs` puts each model in its own folder, `flat` keeps everything in `output`.                                                                |
 | `fileNamingStrategy` | `camel` | `snake` | `kebab` | `camel`                       | File name casing.                                                                                                                               |
@@ -682,7 +787,7 @@ extraScalars: {
 - `apiType` *(optional)* — value used in `@ApiProperty({ type: ... })`. Defaults to `() => ts` when `from` is set, `'<ts>'` otherwise.
 - `format` *(optional)* — value used in `@ApiProperty({ format })`.
 
-The built-in `Prisma.Json` / `Prisma.Decimal` import from `@prisma/client` is skipped automatically for any scalar the user has overridden.
+The built-in `Prisma.Json` / `Prisma.Decimal` import from `@prisma/client` is skipped automatically for any scalar the user has overridden. `typeOnly` *(optional)* renders the import as `import type { ts } from 'from'`; `format: ''` drops the Swagger `format` of the scalar. In Prisma 8 mode `Decimal` and `Json` have defaults (see [Prisma ORM 8](#prisma-orm-8)).
 
 ### `extraAnnotations` — custom annotation discovery
 
@@ -805,7 +910,7 @@ const indexed = this.getAnnotation(model, 'DtoIndexed');
 - `manifest.ts` — `PrismaManifest: Record<Prisma.ModelName, { primaryKey, entityFields, relations }>`. Useful for `select` builders, audit middleware, RBAC field lists.
 - `model-entity-map.ts` — type-only `ModelEntityMap: Prisma.ModelName -> EntityClass`. Useful for typing dynamic select paths.
 
-Both honour `fileNamingStrategy` and `outputStructure`.
+Both honour `fileNamingStrategy` and `outputStructure`. In Zod mode and in Prisma 8 mode there is no `@prisma/client`, so the `ModelName` union is inlined.
 
 ## Comparison
 

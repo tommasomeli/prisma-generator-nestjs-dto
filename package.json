@@ -1,7 +1,7 @@
 {
     "name": "@tommasomeli/prisma-generator-nestjs-dto",
-    "version": "0.2.0",
-    "description": "A pluggable Prisma generator that produces NestJS DTOs (Create/Update/Entity) with Swagger metadata and class-validator decorators, or framework-free Zod 4 schemas. Bring your own annotations and custom sub-generators.",
+    "version": "0.3.0",
+    "description": "A pluggable Prisma generator (Prisma 5-7 and Prisma ORM 8 contracts) that produces NestJS DTOs (Create/Update/Entity) with Swagger metadata and class-validator decorators, or framework-free Zod 4 schemas. Bring your own annotations and custom sub-generators.",
     "keywords": [
         "prisma",
         "prisma-generator",
@@ -13,6 +13,9 @@
         "class-transformer",
         "zod",
         "nestjs-zod",
+        "prisma-8",
+        "prisma-next",
+        "prisma-contract",
         "code-generation",
         "typescript"
     ],
@@ -71,10 +74,17 @@
     },
     "peerDependencies": {
         "@prisma/generator-helper": ">=5",
+        "@prisma/orm-framework": ">=8.0.0-rc.18",
         "prettier": ">=3",
         "zod": "^4.1.0"
     },
     "peerDependenciesMeta": {
+        "@prisma/generator-helper": {
+            "optional": true
+        },
+        "@prisma/orm-framework": {
+            "optional": true
+        },
         "prettier": {
             "optional": true
         },
@@ -84,6 +94,7 @@
     },
     "devDependencies": {
         "@prisma/generator-helper": "7.10.1",
+        "@prisma/orm-framework": "8.0.0-rc.18",
         "@types/node": "^22.13.1",
         "@typescript-eslint/eslint-plugin": "^6.21.0",
         "@typescript-eslint/parser": "^6.21.0",

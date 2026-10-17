@@ -3,7 +3,8 @@ import path from 'node:path';
 import prettier from 'prettier';
 import { BaseGenerator } from './base-generator';
 import { applyConfigFile, loadConfigFile } from './config-loader';
-import { CreateDtoGenerator, CreateZodGenerator, EntityGenerator, EntityZodGenerator, ManifestGenerator, UpdateDtoGenerator, UpdateZodGenerator, ZodSupportGenerator } from './generators';
+import { CreateDtoGenerator, CreateZodGenerator, EntityGenerator, EnumGenerator, EntityZodGenerator, ManifestGenerator, UpdateDtoGenerator, UpdateZodGenerator, ZodSupportGenerator } from './generators';
+import { PRISMA8_MODE_KEY } from './prisma8/types';
 import { GeneratorOptions, RawGeneratorConfig } from './types';
 import { Utility } from './utility';
 
@@ -13,6 +14,12 @@ import { Utility } from './utility';
  * `index.ts` barrels.
  */
 const BuiltInGenerators = { CreateDtoGenerator, EntityGenerator, UpdateDtoGenerator };
+
+/**
+ * Built-ins of the class/interface output in Prisma 8 mode: the local enum files come first
+ * (there is no `@prisma/client` to import enums from), then the regular DTO generators.
+ */
+const Prisma8BuiltInGenerators = { EnumGenerator, ...BuiltInGenerators };
 
 /** Built-ins used when `outputType = "zod"` (replace the class/interface DTO generators). */
 const ZodBuiltInGenerators = { ZodSupportGenerator, CreateZodGenerator, EntityZodGenerator, UpdateZodGenerator };
@@ -158,7 +165,8 @@ export async function generate(options: GeneratorOptions): Promise<void> {
     const rawConfig = mergedConfig;
 
     const extraGenerators = await loadExtraGenerators(options);
-    const builtIns = rawConfig.outputType === 'zod' ? ZodBuiltInGenerators : BuiltInGenerators;
+    const isPrisma8 = Utility.parseBoolean(typeof rawConfig[PRISMA8_MODE_KEY] === 'string' ? rawConfig[PRISMA8_MODE_KEY] : undefined);
+    const builtIns = rawConfig.outputType === 'zod' ? ZodBuiltInGenerators : isPrisma8 ? Prisma8BuiltInGenerators : BuiltInGenerators;
     const allGenerators = { ...builtIns, ...extraGenerators };
     const generators = instantiateGenerators(allGenerators, options);
 

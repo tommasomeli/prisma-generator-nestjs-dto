@@ -87,10 +87,12 @@ export class ZodSupportGenerator extends ZodBaseGenerator {
             const name = `${pascalCase(e.name)}Schema`;
             const typeName = pascalCase(e.name);
             const meta = this.config.zodMeta ? `.meta({ id: '${typeName}' })` : '';
-            const values = e.values.map((v) => `'${v}'`).join(', ');
+            const values = e.entries
+                ? `{ ${e.entries.map(([member, value]) => `${member}: ${typeof value === 'number' ? value : `'${value.replace(/'/g, "\\'")}'`}`).join(', ')} }`
+                : `[${e.values.map((v) => `'${v}'`).join(', ')}]`;
             return {
                 path: this.enumSchemaPath(e.name),
-                content: `import { z } from 'zod';\n\nexport const ${name} = z.enum([${values}])${meta};\n\nexport const ${typeName} = ${name}.enum;\n\nexport type ${typeName} = z.infer<typeof ${name}>;\n`
+                content: `import { z } from 'zod';\n\nexport const ${name} = z.enum(${values})${meta};\n\nexport const ${typeName} = ${name}.enum;\n\nexport type ${typeName} = z.infer<typeof ${name}>;\n`
             };
         });
         const rules = this.getServerRules();

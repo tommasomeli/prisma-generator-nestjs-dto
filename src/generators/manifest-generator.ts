@@ -10,7 +10,9 @@ import { Field, File } from '../types';
  * - `model-entity-map.ts`: a type-only map `Prisma.ModelName -> generated Entity class`,
  *   handy for typing dynamic `select` paths.
  *
- * Opt-in via the `emitManifest` config option (defaults to `false`).
+ * Opt-in via the `emitManifest` config option (defaults to `false`). In Zod mode and in Prisma 8
+ * mode (no `@prisma/client`) the `ModelName` union is inlined. Prisma 8 value objects are not
+ * models: they are left out of both files and of the `relations` of their parents.
  */
 export default class ManifestGenerator extends BaseGenerator {
     filePrefix = '';
@@ -20,10 +22,12 @@ export default class ManifestGenerator extends BaseGenerator {
 
     async generate(): Promise<File[]> {
         const map: Record<string, { primaryKey: string; entityFields: string[]; relations: Record<string, { type: string; isList: boolean }> }> = {};
-        for (const model of this.models) {
+        const models = this.models.filter((m) => !m.isValueObject);
+        const valueObjectNames = new Set(this.models.filter((m) => m.isValueObject).map((m) => m.name));
+        for (const model of models) {
             const relations: Record<string, { type: string; isList: boolean }> = {};
             for (const f of model.fields as Field[]) {
-                if (f.kind !== 'object') continue;
+                if (f.kind !== 'object' || valueObjectNames.has(f.type)) continue;
                 relations[f.name] = { type: f.type, isList: Boolean(f.isList) };
             }
             map[model.name] = {
@@ -33,9 +37,10 @@ export default class ManifestGenerator extends BaseGenerator {
             };
         }
         const isZod = this.config.outputType === 'zod';
-        // Zod mode output must stay framework-free, so the model-name union is inlined instead of importing Prisma.
-        const modelNameHeader = isZod
-            ? `export type ModelName = ${this.models.map((m) => `'${m.name}'`).join(' | ') || 'never'};`
+        // Zod mode output must stay framework-free and Prisma 8 has no `@prisma/client`, so the model-name union is inlined.
+        const inlineModelName = isZod || this.config.prisma8;
+        const modelNameHeader = inlineModelName
+            ? `export type ModelName = ${models.map((m) => `'${m.name}'`).join(' | ') || 'never'};`
             : `import type { Prisma } from '@prisma/client';`;
         const manifestContent = `${modelNameHeader}
 
@@ -50,10 +55,10 @@ export interface ModelManifest {
     relations: Record<string, RelationDescriptor>;
 }
 
-export const PrismaManifest: Record<${isZod ? 'ModelName' : 'Prisma.ModelName'}, ModelManifest> = ${JSON.stringify(map, null, 4)};
+export const PrismaManifest: Record<${inlineModelName ? 'ModelName' : 'Prisma.ModelName'}, ModelManifest> = ${JSON.stringify(map, null, 4)};
 `;
 
-        const modelNames = this.models.map((m) => m.name);
+        const modelNames = models.map((m) => m.name);
         const isFlat = this.config.outputStructure === 'flat';
         const entitySuffix = isZod ? '.schema' : '.entity';
         const importLines = modelNames

@@ -67,6 +67,11 @@ export type Model = {
     isGenerated?: boolean;
     annotations: Annotation[];
     outputType?: OutputType;
+    /**
+     * Prisma 8 only: the model is a value object (`type` block, stored inline) taken from
+     * `datamodel.types`. It has no table, so no id and no relations.
+     */
+    isValueObject?: boolean;
 };
 
 /**
@@ -90,8 +95,14 @@ export type ScalarOverride = {
     from?: string;
     /** TypeScript expression used in `@ApiProperty({ type: ... })`. Defaults to `ts`. */
     apiType?: string;
-    /** Value passed to `@ApiProperty({ format })`. Omit to inherit / drop the default. */
+    /** Value passed to `@ApiProperty({ format })`. Omit to inherit the default; `''` drops it. */
     format?: string;
+    /**
+     * Emit `import type { ts } from 'from'` instead of a value import. Use it when `ts` is a
+     * type-only export (e.g. `JsonValue`), so the import survives `isolatedModules` /
+     * `verbatimModuleSyntax` and never reaches the runtime bundle.
+     */
+    typeOnly?: boolean;
     /**
      * Zod expression used for the scalar in `outputType = "zod"` (e.g. `'z.string()'`).
      * Identifiers it references are imported through `extraImports`.
@@ -118,6 +129,11 @@ export type GeneratorConfig = {
     extraGenerators?: string | string[];
     /** Prisma scalar overrides (TS type + optional import + optional Swagger metadata). */
     extraScalars: Record<string, ScalarOverride>;
+    /**
+     * Prisma 8 mode (`generator.config.prisma8 === 'true'`, set by the contract CLI). Enables the
+     * local enum files, value objects and the `@prisma/client`-free output. Defaults to `false`.
+     */
+    prisma8: boolean;
     /**
      * Names of user-defined annotations that custom sub-generators want to react to.
      * The base parser still emits any `@Name` it finds in `///` comments, so registering
@@ -146,6 +162,8 @@ export interface ImportType {
     from: string;
     alias?: string;
     destruct?: string[];
+    /** Render as `import type { ... }`. Kept separate from value imports of the same module. */
+    typeOnly?: boolean;
 }
 
 /** Raw map representation of `options.generator.config` as produced by Prisma. */

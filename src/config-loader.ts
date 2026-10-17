@@ -80,6 +80,26 @@ export async function loadConfigFile(options: GeneratorOptions): Promise<LoadedC
         Utility.error(`configFile not found: ${configFile}`);
         return null;
     }
+    return loadResolvedConfigFile(resolved);
+}
+
+/**
+ * Loads a configuration file given its path directly, without a `generator` block to carry
+ * the `configFile` option (Prisma 8 CLI mode). Relative paths are resolved against `cwd`.
+ * Same loader, same error semantics as {@link loadConfigFile}: returns `null` (after logging)
+ * when the file is missing, has an unsupported extension, fails to load or exports nothing usable.
+ */
+export async function loadConfigFileFromPath(filePath: string, cwd: string = process.cwd()): Promise<LoadedConfigFile | null> {
+    const resolved = path.resolve(cwd, filePath);
+    if (!fs.existsSync(resolved)) {
+        Utility.error(`configFile not found: ${filePath}`);
+        return null;
+    }
+    return loadResolvedConfigFile(resolved);
+}
+
+/** Shared loader: imports an existing absolute config file path through jiti or `require` and picks the config object. */
+async function loadResolvedConfigFile(resolved: string): Promise<LoadedConfigFile | null> {
     const ext = path.extname(resolved).toLowerCase();
     try {
         let mod: unknown;

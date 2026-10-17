@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'tsup';
+
+/** Package version baked into the bundles (read by `getVersion()` in `src/prisma8/cli.ts`). */
+const define = { __PACKAGE_VERSION__: JSON.stringify(JSON.parse(readFileSync('./package.json', 'utf8')).version) };
 
 const outExtension = ({ format }: { format: 'cjs' | 'esm' | 'iife' }) => {
     if (format === 'cjs') return { js: '.cjs' };
@@ -18,6 +22,7 @@ export default defineConfig([
         outDir: 'dist',
         splitting: false,
         treeshake: true,
+        define,
         outExtension
     },
     {
@@ -32,6 +37,7 @@ export default defineConfig([
         splitting: false,
         treeshake: true,
         banner: { js: '#!/usr/bin/env node' },
+        define,
         outExtension
     }
 ]);

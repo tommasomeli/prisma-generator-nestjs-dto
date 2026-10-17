@@ -1,0 +1,38 @@
+// use prisma-8
+
+enum Role {
+  ADMIN
+  USER
+}
+
+/// @Auditable("user_audit")
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  /// Field hidden from every emitted DTO.
+  /// @DtoHidden
+  passwordHash String
+  role         Role     @default(USER)
+  bio          VarChar(255)?
+  posts        Post[]
+  createdAt    DateTime @default(now())
+  updatedAt    temporal.updatedAt()
+
+  @@map("user")
+}
+
+/// @Auditable("post_audit")
+model Post {
+  id        Int      @id @default(autoincrement())
+  /// @MaxLength(120)
+  title     String
+  body      String
+  score     Decimal
+  meta      Jsonb?
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int
+  createdAt DateTime @default(now())
+
+  @@map("post")
+}

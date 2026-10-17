@@ -116,7 +116,7 @@ export class Utility {
         const out: Record<string, ScalarOverride> = {};
         for (const [scalar, raw] of Object.entries(parsed as Record<string, unknown>)) {
             if (!raw || typeof raw !== 'object') continue;
-            const override = raw as { ts?: unknown; from?: unknown; apiType?: unknown; format?: unknown; zod?: unknown };
+            const override = raw as { ts?: unknown; from?: unknown; apiType?: unknown; format?: unknown; zod?: unknown; typeOnly?: unknown };
             if (typeof override.ts !== 'string' && typeof override.zod !== 'string') {
                 Utility.warn(`extraScalars["${scalar}"] is missing a string \`ts\` field, ignoring.`);
                 continue;
@@ -126,7 +126,8 @@ export class Utility {
                 from: typeof override.from === 'string' ? override.from : undefined,
                 apiType: typeof override.apiType === 'string' ? override.apiType : undefined,
                 format: typeof override.format === 'string' ? override.format : undefined,
-                ...(typeof override.zod === 'string' ? { zod: override.zod } : {})
+                ...(typeof override.zod === 'string' ? { zod: override.zod } : {}),
+                ...(override.typeOnly === true || override.typeOnly === 'true' ? { typeOnly: true } : {})
             };
         }
         return out;

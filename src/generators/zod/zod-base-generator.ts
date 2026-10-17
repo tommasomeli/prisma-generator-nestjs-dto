@@ -9,7 +9,15 @@ import { ServerRuleDraft, ZodAnnotation, ZodBaseKind, resolveZodAnnotations, tra
 export type ZodSchemaKind = 'entity' | 'create' | 'update';
 
 /** Prisma enum as exposed by the DMMF, reduced to what Zod mode needs. */
-export type ZodEnum = { name: string; values: string[] };
+export type ZodEnum = {
+    name: string;
+    values: string[];
+    /**
+     * Prisma 8 only: `[member, stored value]` pairs, set when a stored value differs from the member
+     * name (numeric enums, mapped members). Rendered as `z.enum({ Low: 0, ... })`.
+     */
+    entries?: [string, string | number][];
+};
 
 /** Expression plus its static Zod type (`null` when it cannot be derived). */
 type Built = { code: string; type: string | null };
@@ -110,8 +118,17 @@ export abstract class ZodBaseGenerator extends BaseGenerator {
      * @return Enum names with their values.
      */
     protected getEnums(): ZodEnum[] {
-        const enums = (this.options.dmmf?.datamodel?.enums ?? []) as readonly { name: string; values: readonly { name: string }[] }[];
-        return enums.map((e) => ({ name: e.name, values: e.values.map((v) => v.name) }));
+        const enums = (this.options.dmmf?.datamodel?.enums ?? []) as readonly { name: string; values: readonly { name: string; dbName?: string | null }[] }[];
+        return enums.map((e) => {
+            const out: ZodEnum = { name: e.name, values: e.values.map((v) => v.name) };
+            // Prisma 8 returns the stored value at runtime (contract member `value`, carried as `dbName`).
+            if (this.config.prisma8 && e.values.some((v) => v.dbName !== null && v.dbName !== undefined && v.dbName !== v.name)) {
+                const stored = e.values.map((v) => v.dbName ?? v.name);
+                const numeric = stored.every((value) => /^-?\d+(?:\.\d+)?$/.test(value));
+                out.entries = e.values.map((v, i) => [v.name, numeric ? Number(stored[i]) : stored[i]]);
+            }
+            return out;
+        });
     }
 
     /**
@@ -291,6 +308,9 @@ export abstract class ZodBaseGenerator extends BaseGenerator {
             case 'BigInt':
                 return codecs ? `${value}n` : quote(String(value));
             case 'Decimal':
+                // Prisma 8 D3 default (`Decimal` as `z.string()`, `ts: 'string'`): the default is a string too.
+                if (this.config.prisma8 && this.config.extraScalars.Decimal?.ts === 'string') return quote(String(value));
+                return String(Number(value));
             case 'Float':
             case 'Int':
                 return String(Number(value));
@@ -367,6 +387,12 @@ export abstract class ZodBaseGenerator extends BaseGenerator {
         if (field.kind === 'object' || (!field.kind && !PRISMA_SCALARS.has(field.type))) {
             const related = this.models.find((m) => m.name === field.type);
             if (!related) return { built: { code: 'z.unknown()', type: null }, baseKind: 'other', isRef: false };
+            // Prisma 8 value objects are stored inline (no id to connect by): each schema kind embeds the same kind of the value object.
+            if (related.isValueObject && this.schemaKind !== 'entity') {
+                const name = this.schemaName(related.name, this.schemaKind);
+                this.importFrom(state, this.getPath(related), name);
+                return { built: { code: name, type: `typeof ${name}` }, baseKind: 'other', isRef: true };
+            }
             if (this.schemaKind === 'entity') {
                 const name = this.schemaName(related.name);
                 this.importFrom(state, this.entitySchemaPath(related), name);

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { applyConfigFile, loadConfigFile } from '../src/config-loader';
+import { applyConfigFile, loadConfigFile, loadConfigFileFromPath } from '../src/config-loader';
 import { generate } from '../src/generator';
 import CreateDtoGenerator from '../src/generators/create-dto-generator';
 import { buildOptions } from './helpers/build-options';
@@ -102,5 +102,26 @@ describe('configFile end-to-end', () => {
         return gen.generate().then(([file]) => {
             expect(file.content).toContain('@IsBoolean()');
         });
+    });
+});
+
+describe('loadConfigFileFromPath', () => {
+    it('loads a .ts file by absolute path, like loadConfigFile', async () => {
+        const result = await loadConfigFileFromPath(FIXTURE_TS);
+        expect(result).not.toBeNull();
+        expect(result!.config.extraImports).toHaveLength(2);
+        expect(result!.file).toBe(FIXTURE_TS);
+        expect(result!.dir).toBe(path.dirname(FIXTURE_TS));
+    });
+
+    it('resolves a relative path against the given cwd', async () => {
+        const result = await loadConfigFileFromPath('fixtures/sample-config.json', __dirname);
+        expect(result).not.toBeNull();
+        expect(result!.config.extraValidators).toBe('IsUnique:src/common/validators');
+        expect(result!.file).toBe(FIXTURE_JSON);
+    });
+
+    it('returns null and does not throw when the file does not exist', async () => {
+        expect(await loadConfigFileFromPath('/nonexistent/nestjs-dto.config.ts')).toBeNull();
     });
 });

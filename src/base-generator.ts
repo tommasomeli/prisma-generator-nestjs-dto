@@ -20,6 +20,8 @@ import {
     SWAGGER_API_PROPERTY_DECORATORS,
     SWAGGER_DECORATORS
 } from './constants';
+import { prisma8ScalarDefaults } from './prisma8/options-shim';
+import { PRISMA8_MODE_KEY } from './prisma8/types';
 import { Annotation, Field, File, GeneratorConfig, GeneratorOptions, ImportType, Model, NamingStrategy, OutputStructure, OutputType, RawGeneratorConfig, ZodMessageStrategy } from './types';
 import { Utility } from './utility';
 
@@ -58,10 +60,18 @@ export abstract class BaseGenerator {
             extraAnnotations: Utility.parseAnnotationNames(raw.extraAnnotations),
             zodMeta: asString(raw.zodMeta) === undefined ? true : Utility.parseBoolean(asString(raw.zodMeta)),
             zodMessageStrategy: (['key', 'expression', 'none'].includes(asString(raw.zodMessageStrategy) ?? '') ? asString(raw.zodMessageStrategy) : 'key') as ZodMessageStrategy,
-            zodCodecs: Utility.parseBoolean(asString(raw.zodCodecs))
+            zodCodecs: Utility.parseBoolean(asString(raw.zodCodecs)),
+            prisma8: Utility.parseBoolean(asString(raw[PRISMA8_MODE_KEY]))
         };
-        this.models = this.options.dmmf.datamodel.models
+        // Prisma 8: the D3 `extraScalars` defaults sit under the user's entries even when the options were not built by
+        // `buildPrisma8Options`, so no class file falls back to `Prisma.Decimal` / `Prisma.JsonValue` and Zod `Decimal` is a string.
+        if (this.config.prisma8) this.config.extraScalars = { ...prisma8ScalarDefaults(this.config.outputType), ...this.config.extraScalars };
+        // Prisma 8 value objects (`type` blocks) travel in `datamodel.types` and are emitted like models.
+        const valueObjects = this.config.prisma8 ? ((this.options.dmmf.datamodel.types ?? []) as typeof this.options.dmmf.datamodel.models) : [];
+        const valueObjectNames = new Set(valueObjects.map((model) => model.name));
+        this.models = [...this.options.dmmf.datamodel.models, ...valueObjects]
             .map<Model>((model) => ({
+                ...(valueObjectNames.has(model.name) ? { isValueObject: true } : {}),
                 name: model.name,
                 dbName: model.dbName,
                 documentation: model.documentation,
@@ -257,7 +267,7 @@ export abstract class BaseGenerator {
         return imports
             .map((i) => {
                 const from = this.stripTsExtension(this.rewriteImportPath(i.from, outputPath));
-                return `import ${i.alias ? i.alias : `{ ${(i.destruct || []).join(', ')} }`} from '${from}';`;
+                return `import ${i.typeOnly ? 'type ' : ''}${i.alias ? i.alias : `{ ${(i.destruct || []).join(', ')} }`} from '${from}';`;
             })
             .join('\n');
     }
@@ -314,6 +324,8 @@ export abstract class BaseGenerator {
                 clone.type = String(overrideType.params[0]);
                 return clone;
             }
+            const valueObjectClass = field.kind === 'object' ? this.getValueObjectClassName(field.type) : undefined;
+            if (valueObjectClass && valueObjectClass !== field.type) return { ...field, type: valueObjectClass };
             return field;
         });
         return { ...model, fields };
@@ -325,23 +337,84 @@ export abstract class BaseGenerator {
      * same path will not collide).
      */
     private mergeImport(imports: ImportType[], next: ImportType): void {
+        // `import type` entries never merge into value imports (and vice versa).
+        const sameKind = (i: ImportType): boolean => Boolean(i.typeOnly) === Boolean(next.typeOnly);
+        const typeOnly = next.typeOnly ? { typeOnly: true } : {};
         if (next.alias) {
-            const existing = imports.find((i) => i.from === next.from && i.alias);
+            const existing = imports.find((i) => i.from === next.from && i.alias && sameKind(i));
             if (existing) {
                 existing.alias = next.alias;
                 return;
             }
-            imports.push({ from: next.from, alias: next.alias });
+            imports.push({ from: next.from, alias: next.alias, ...typeOnly });
             return;
         }
         if (next.destruct && next.destruct.length) {
-            const existing = imports.find((i) => i.from === next.from && i.destruct);
+            const existing = imports.find((i) => i.from === next.from && i.destruct && sameKind(i));
             if (existing) {
                 existing.destruct = Array.from(new Set([...(existing.destruct || []), ...next.destruct]));
                 return;
             }
-            imports.push({ from: next.from, destruct: [...next.destruct] });
+            imports.push({ from: next.from, destruct: [...next.destruct], ...typeOnly });
         }
+    }
+
+    /**
+     * Prisma 8 mode (D4): class name a value-object field refers to from this generator's files, i.e. the
+     * generator's own variant of the value object (`CreateAddressDto` in Create DTOs, `UpdateAddressDto` in
+     * Update DTOs, `Address` in entities) so nested validation runs. `undefined` for anything that is not a
+     * value object (relations keep referencing the entity class).
+     */
+    protected getValueObjectClassName(typeName: string): string | undefined {
+        if (!this.config.prisma8 || !this.models.some((m) => m.isValueObject && m.name === typeName)) return undefined;
+        return `${this.classPrefix}${typeName}${this.classSuffix}`;
+    }
+
+    /**
+     * Prisma 8 mode: output path of the local enum file (`<output>/enums/<name>.enum.ts`, or
+     * `<output>/<name>.enum.ts` with the `flat` structure), the same layout as the Zod mode.
+     */
+    public getEnumPath(enumName: string): string {
+        const name = this.getModelName(enumName);
+        return this.config.outputStructure === 'flat' ? `${this.config.output}/${name}.enum.ts` : `${this.config.output}/enums/${name}.enum.ts`;
+    }
+
+    /**
+     * Prisma 8 mode: import specifier of an enum from the file of `model`. Points at the `enums`
+     * folder barrel when `reExport` is on (like relations do), at the enum file otherwise.
+     */
+    private getEnumImportPath(enumName: string, model: Model): string {
+        const enumPath = this.getEnumPath(enumName);
+        const useBarrel = Utility.parseBoolean(this.config.reExport) && this.config.outputStructure !== 'flat';
+        const target = useBarrel ? path.dirname(enumPath) : this.stripTsExtension(enumPath);
+        const relative = path.relative(path.dirname(this.getPath(model)), target).split(path.sep).join('/');
+        return relative.startsWith('.') ? relative : `./${relative}`;
+    }
+
+    /**
+     * Prisma 8 mode: a numeric `BigInt` default (`@default(0)`) is rendered as `BigInt(0)`, since a
+     * number literal is not assignable to `bigint`. Skipped when the scalar is overridden.
+     */
+    private getBigIntDefaultInitializer(field: Field, defaultValue: unknown): string | undefined {
+        if (!this.config.prisma8 || field.type !== 'BigInt' || field.kind !== 'scalar' || field.isList || this.config.extraScalars?.BigInt) return undefined;
+        if (typeof defaultValue === 'number' || (typeof defaultValue === 'string' && /^-?\d+$/.test(defaultValue))) return `BigInt(${defaultValue})`;
+        return undefined;
+    }
+
+    /**
+     * Prisma 8 mode: renders an enum default as a member access (`Role.USER`, `Priority.Medium`),
+     * since a local TS `enum` does not accept the raw literal. Matches the member by name first,
+     * then by stored value (`dbName`). Returns `undefined` when nothing matches.
+     */
+    private getEnumDefaultInitializer(field: Field): string | undefined {
+        if (!this.config.prisma8 || field.kind !== 'enum' || field.isList) return undefined;
+        const enums = (this.options.dmmf.datamodel.enums ?? []) as readonly { name: string; values: readonly { name: string; dbName?: string | null }[] }[];
+        const target = enums.find((e) => e.name === field.type);
+        if (!target) return undefined;
+        const raw = field.default;
+        if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
+        const member = target.values.find((v) => v.name === raw) ?? target.values.find((v) => v.dbName !== null && v.dbName !== undefined && v.dbName === String(raw));
+        return member ? `${field.type}.${member.name}` : undefined;
     }
 
     /** Collects every import the rendered class will need. */
@@ -365,22 +438,28 @@ export abstract class BaseGenerator {
                 const from = findOverride(name)?.from ?? importParams.from;
                 grouped.set(from, [...(grouped.get(from) ?? []), name]);
             });
-            grouped.forEach((destruct, from) => this.mergeImport(imports, { from, destruct }));
+            grouped.forEach((destruct, from) => this.mergeImport(imports, { from, destruct, ...(importParams.typeOnly && from === importParams.from ? { typeOnly: true } : {}) }));
         };
         const scalarOverrides = this.config.extraScalars ?? {};
         model.fields.forEach((field: Field) => {
             if (field.kind === 'object' && field.type && field.type !== `${this.classPrefix}${model.name}${this.classSuffix}`) {
-                const relationModel = this.models.find((m) => m.name === field.type);
+                // Prisma 8 value-object fields were renamed to this generator's variant (`CreateAddressDto`) by `applyOverrides`.
+                const relationModel = this.models.find((m) => m.name === field.type) ?? this.models.find((m) => m.isValueObject && this.getValueObjectClassName(m.name) === field.type);
                 if (relationModel) {
                     const importPath = this.getPath(relationModel, this.getPath(model));
-                    addImport({ from: Utility.parseBoolean(this.config.reExport) ? path.dirname(importPath) : importPath, destruct: [relationModel.name] });
+                    const valueObjectClass = this.getValueObjectClassName(relationModel.name);
+                    let from = Utility.parseBoolean(this.config.reExport) ? path.dirname(importPath) : importPath;
+                    // Value objects only (relations keep their historical specifier): never emit a bare `create-address.dto`.
+                    if (valueObjectClass && !from.startsWith('.')) from = `./${from}`;
+                    addImport({ from, destruct: [valueObjectClass ?? relationModel.name] });
                 }
             }
-            if (field.kind === 'enum') addImport({ from: '@prisma/client', destruct: [field.type] });
+            // Prisma 8 has no `@prisma/client`: enums come from the local `enums/` files.
+            if (field.kind === 'enum') addImport({ from: this.config.prisma8 ? this.getEnumImportPath(field.type, model) : '@prisma/client', destruct: [field.type] });
             const override = scalarOverrides[field.type];
-            if (override && override.from) addImport({ from: override.from, destruct: [override.ts] });
-            // Built-in `Prisma.Json` / `Prisma.Decimal` are only needed when the user has NOT overridden the scalar.
-            else if (field.type === 'Json' || field.type === 'Decimal') addImport({ from: '@prisma/client', destruct: ['Prisma'] });
+            if (override && override.from) addImport({ from: override.from, destruct: [override.ts], ...(override.typeOnly ? { typeOnly: true } : {}) });
+            // Built-in `Prisma.Json` / `Prisma.Decimal` are only needed when the user has NOT overridden the scalar (never in Prisma 8 mode).
+            else if ((field.type === 'Json' || field.type === 'Decimal') && !this.config.prisma8) addImport({ from: '@prisma/client', destruct: ['Prisma'] });
         });
         if (this.config.outputType === 'class' && swaggerDocs) {
             const addSwaggerDecorator = (decorator: string) => addImport({ from: '@nestjs/swagger', destruct: [decorator] });
@@ -395,6 +474,7 @@ export abstract class BaseGenerator {
         }
         if (this.config.outputType === 'class' && classValidator) {
             const addValidator = (decorator: string) => addImport({ from: 'class-validator', destruct: [decorator] });
+            const deferredValidators = new Set<string>();
             model.fields.forEach((field: Field) => {
                 if (!field.isRequired) addValidator('IsOptional');
                 if (!field.isNullable) addValidator('IsNotEmpty');
@@ -426,6 +506,9 @@ export abstract class BaseGenerator {
                 field.annotations.forEach((annotation) => {
                     if (CLASS_VALIDATOR_DECORATORS.includes(annotation.name)) addValidator(annotation.name);
                 });
+                // Lists always get `@IsOptional()` (see getTemplate), even when `isRequired`. Appended last so
+                // the import order of files that already imported it is unchanged.
+                if (field.isList && field.isRequired) deferredValidators.add('IsOptional');
                 field.annotations.forEach((annotation) => {
                     if (CLASS_TRANSFORMER_DECORATORS.includes(annotation.name)) addImport({ from: 'class-transformer', destruct: [annotation.name] });
                 });
@@ -440,6 +523,7 @@ export abstract class BaseGenerator {
                     });
                 }
             });
+            deferredValidators.forEach(addValidator);
         }
         if (this.config.extraDecorators.length) {
             model.fields.forEach((field: Field) => {
@@ -537,6 +621,8 @@ export abstract class BaseGenerator {
         const model = this.applyOverrides(args.model);
         const scalarOverrides = this.config.extraScalars ?? {};
         const getPropertyType = (field: Field, isDecorator = false): string => {
+            // Prisma 8 codecs without a mapping (e.g. `pg/vector@1`) and no `extraScalars` entry.
+            if (this.config.prisma8 && field.kind === 'unsupported') return isDecorator ? '() => Object' : 'unknown';
             const override = field.kind === 'scalar' ? scalarOverrides[field.type] : undefined;
             if (override) {
                 if (!isDecorator) return override.ts;
@@ -557,7 +643,11 @@ export abstract class BaseGenerator {
                 case 'string':
                 case 'number':
                 case 'boolean':
-                    if (field.type === 'Decimal' && typeof field.default === 'number') return `new Prisma.Decimal(${field.default})`;
+                    if (field.type === 'Decimal' && typeof field.default === 'number') {
+                        // A `string` override (the Prisma 8 default) takes the literal; `new Prisma.Decimal` would not type-check.
+                        if (scalarOverrides.Decimal?.ts === 'string') return String(field.default);
+                        return `new Prisma.Decimal(${field.default})`;
+                    }
                     return field.default;
                 case 'object':
                     if (field.default && typeof field.default === 'object' && 'name' in field.default) {
@@ -670,7 +760,8 @@ export abstract class BaseGenerator {
                 let fieldType = getPropertyType(field);
                 if (field.isList) fieldType += '[]';
                 if (field.isNullable && !hasDefault) fieldType += ' | null';
-                return `\t${decorators.length ? decorators.join('\n\t') + '\n' : ''}\t${isReadOnly ? ' readonly' : ''} ${field.name}${!field.isRequired || (field.isNullable && !hasDefault) || hasDefault ? '?' : this.config.outputType === 'class' ? '!' : ''}: ${fieldType}${hasDefault ? ` = ${typeof defaultValue === 'string' && !defaultValue.startsWith('new') ? `'${defaultValue}'` : defaultValue}` : ''};\n`;
+                const initializer = hasDefault ? (this.getEnumDefaultInitializer(field) ?? this.getBigIntDefaultInitializer(field, defaultValue) ?? (typeof defaultValue === 'string' && !defaultValue.startsWith('new') ? `'${defaultValue}'` : defaultValue)) : undefined;
+                return `\t${decorators.length ? decorators.join('\n\t') + '\n' : ''}\t${isReadOnly ? ' readonly' : ''} ${field.name}${!field.isRequired || (field.isNullable && !hasDefault) || hasDefault ? '?' : this.config.outputType === 'class' ? '!' : ''}: ${fieldType}${hasDefault ? ` = ${initializer}` : ''};\n`;
             })
             .join('\n');
         const className = `${this.classPrefix}${model.name}${this.classSuffix}`;
