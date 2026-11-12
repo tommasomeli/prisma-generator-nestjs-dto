@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-12
+
+### Fixed
+
+- Class mode: `Update*Dto` carries no Prisma defaults (property initializers and Swagger `default`). With `ValidationPipe({ transform: true })` a partial update such as `{ name }` now stays `{ name }` and leaves every other column untouched.
+- Class mode: fields with a Prisma default (`@default(now())`, `@default(uuid())`, `@default(USER)`, ...) are optional in `Create*Dto` (`@IsOptional()`, Swagger `required: false`), as in the Zod mode. `@DtoCreateRequired` keeps such a field required.
+
+### Added
+
+- `BaseGenerator.applyDefaults`: lets a plugin choose whether `getTemplate` renders Prisma defaults.
+
 ## [0.3.1] - 2026-10-17
 
 ### Fixed

@@ -1,4 +1,4 @@
-import { DTO_CREATE_VALIDATE_IF } from '../annotations';
+import { DTO_CREATE_REQUIRED, DTO_CREATE_VALIDATE_IF } from '../annotations';
 import { BaseGenerator } from '../base-generator';
 import { selectCreateFields } from '../field-selection';
 import { File } from '../types';
@@ -15,6 +15,8 @@ export default class CreateDtoGenerator extends BaseGenerator {
             const processedFields = selectCreateFields(model)
                 .filter((field) => !(this.config.prisma8 && field.kind === 'unsupported'))
                 .map((field) => {
+                // The database fills fields with a Prisma default (`@default(...)`), so the client may omit them.
+                if (field.hasDefaultValue && !field.annotations.some((a) => a.name === DTO_CREATE_REQUIRED)) field.isRequired = false;
                 const validateIfAnnotation = field.annotations.find((a) => a.name === DTO_CREATE_VALIDATE_IF);
                 if (validateIfAnnotation && validateIfAnnotation.params && validateIfAnnotation.params.length > 0) {
                     const validateIfParams = validateIfAnnotation.params.join(', ');

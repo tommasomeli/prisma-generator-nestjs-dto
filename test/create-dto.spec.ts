@@ -59,4 +59,28 @@ describe('CreateDtoGenerator', () => {
         const [file] = await gen.generate();
         expect(file.content).toMatch(/export class CreateUserDto /);
     });
+
+    it('makes fields with a Prisma default optional unless @DtoCreateRequired', async () => {
+        const gen = new CreateDtoGenerator(
+            buildOptions({
+                models: [
+                    {
+                        name: 'User',
+                        fields: [
+                            { name: 'email', type: 'String', isRequired: true },
+                            { name: 'role', type: 'Role', kind: 'enum', isRequired: true, hasDefaultValue: true, default: 'USER' },
+                            { name: 'joinedAt', type: 'DateTime', isRequired: true, hasDefaultValue: true, default: { name: 'now', args: [] } },
+                            { name: 'plan', type: 'String', isRequired: true, hasDefaultValue: true, default: 'free', documentation: '@DtoCreateRequired' }
+                        ]
+                    }
+                ],
+                enums: [{ name: 'Role', values: ['USER', 'ADMIN'] }]
+            })
+        );
+        const [file] = await gen.generate();
+        expect(file.content).toMatch(/email!:/);
+        expect(file.content).toMatch(/required: false, default: 'USER' }\)\s*@IsOptional\(\)\s*@IsNotEmpty\(\)\s*role\?: Role = 'USER';/);
+        expect(file.content).toMatch(/required: false, format: 'date-time' }\)\s*@IsOptional\(\)[\s\S]*joinedAt\?: Date;/);
+        expect(file.content).toMatch(/required: true, default: 'free' }\)\s*@IsNotEmpty\(\)[\s\S]*plan\?: string = 'free';/);
+    });
 });

@@ -31,8 +31,9 @@ export class CreatePostDto {
 	@Type(() => User)
 	 author!: User;
 
-	@ApiProperty({ type: () => Date, required: true, format: 'date-time' })
+	@ApiProperty({ type: () => Date, required: false, format: 'date-time' })
+	@IsOptional()
 	@IsNotEmpty()
 	@IsDateString()
-	 createdAt!: Date;
+	 createdAt?: Date;
 }

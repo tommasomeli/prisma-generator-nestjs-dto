@@ -8,6 +8,7 @@ export default class UpdateDtoGenerator extends BaseGenerator {
     fileSuffix = '.dto';
     classPrefix = 'Update';
     classSuffix = 'Dto';
+    protected applyDefaults = false;
 
     async generate(): Promise<File[]> {
         return this.models.map((model) => {

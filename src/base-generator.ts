@@ -115,6 +115,12 @@ export abstract class BaseGenerator {
     abstract classPrefix: string;
     abstract classSuffix: string;
 
+    /**
+     * Whether Prisma defaults become property initializers and Swagger `default`s. Update DTOs turn it
+     * off, so a partial update never sends a default back for a field the client left out.
+     */
+    protected applyDefaults = true;
+
     /** Produces the list of files this generator wants to emit. */
     abstract generate(): Promise<File[]>;
 
@@ -637,7 +643,7 @@ export abstract class BaseGenerator {
             return field.type;
         };
         const getDefaultValue = (field: Field): any => {
-            if (!field.hasDefaultValue) return undefined;
+            if (!this.applyDefaults || !field.hasDefaultValue) return undefined;
             if (Array.isArray(field.default)) return JSON.stringify(field.default);
             switch (typeof field.default) {
                 case 'string':

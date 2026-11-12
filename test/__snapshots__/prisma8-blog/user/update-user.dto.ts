@@ -22,10 +22,10 @@ export class UpdateUserDto {
 	@IsString()
 	 name?: string;
 
-	@ApiProperty({ enum: Role, enumName: 'Role', required: false, default: 'USER' })
+	@ApiProperty({ enum: Role, enumName: 'Role', required: false })
 	@IsOptional()
 	@IsNotEmpty()
-	 role?: Role = Role.USER;
+	 role?: Role;
 
 	@ApiProperty({ type: 'string', required: false, nullable: true })
 	@IsOptional()

@@ -43,4 +43,27 @@ describe('UpdateDtoGenerator', () => {
         expect(file.content).toMatch(/email!:/);
         expect(file.content).not.toContain('token');
     });
+
+    it('emits no Prisma default, so a partial update leaves omitted fields untouched', async () => {
+        const gen = new UpdateDtoGenerator(
+            buildOptions({
+                models: [
+                    {
+                        name: 'User',
+                        fields: [
+                            { name: 'id', type: 'Int', isId: true, isRequired: true },
+                            { name: 'role', type: 'Role', kind: 'enum', isRequired: true, hasDefaultValue: true, default: 'USER' },
+                            { name: 'active', type: 'Boolean', isRequired: true, hasDefaultValue: true, default: true }
+                        ]
+                    }
+                ],
+                enums: [{ name: 'Role', values: ['USER', 'ADMIN'] }]
+            })
+        );
+        const [file] = await gen.generate();
+        expect(file.content).toMatch(/role\?: Role;/);
+        expect(file.content).toMatch(/active\?: boolean;/);
+        expect(file.content).not.toContain('default:');
+        expect(file.content).not.toContain(' = ');
+    });
 });

@@ -15,7 +15,8 @@ export class CreateUserDto {
 	@IsString()
 	 name!: string;
 
-	@ApiProperty({ enum: Role, enumName: 'Role', required: true, default: 'USER' })
+	@ApiProperty({ enum: Role, enumName: 'Role', required: false, default: 'USER' })
+	@IsOptional()
 	@IsNotEmpty()
 	 role?: Role = Role.USER;
 
@@ -31,8 +32,9 @@ export class CreateUserDto {
 	@Type(() => Post)
 	 posts?: Post[] | null;
 
-	@ApiProperty({ type: () => Date, required: true, format: 'date-time' })
+	@ApiProperty({ type: () => Date, required: false, format: 'date-time' })
+	@IsOptional()
 	@IsNotEmpty()
 	@IsDateString()
-	 createdAt!: Date;
+	 createdAt?: Date;
 }

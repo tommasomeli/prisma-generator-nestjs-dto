@@ -46,7 +46,7 @@ describe('Prisma 8 output: blog contract (class mode)', () => {
         const { read } = await run('blog', blog());
         const createUser = read('user/create-user.dto.ts');
         expect(createUser).toContain("import { Role } from '../enums';");
-        expect(createUser).toContain("@ApiProperty({ enum: Role, enumName: 'Role', required: true, default: 'USER' })");
+        expect(createUser).toContain("@ApiProperty({ enum: Role, enumName: 'Role', required: false, default: 'USER' })");
         expect(createUser).toContain('role?: Role = Role.USER;');
     });
 
